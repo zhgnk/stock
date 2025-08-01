@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票买卖结算器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>股票买卖结算器</h1>
+
+        <div class="transaction-type">
+            <label>
+                <input type="radio" name="transaction" value="buy" checked onchange="handleTransactionTypeChange()"> 买入
+            </label>
+            <label>
+                <input type="radio" name="transaction" value="sell" onchange="handleTransactionTypeChange()"> 卖出
+            </label>
+        </div>
+
+        <div class="input-group">
+            <label for="shares">股数:</label>
+            <input type="number" id="shares" placeholder="请输入股数" min="1" step="1">
+        </div>
+        <div class="input-group">
+            <label for="price">价格 (元/股):</label>
+            <input type="number" id="price" placeholder="请输入价格" min="0.01" step="0.01">
+        </div>
+
+        <button onclick="calculateSettlement()">计算结算金额</button>
+
+        <div class="result">
+            <h2>结算详情</h2>
+            <p>成交金额: <span id="transactionAmount">0.00</span> 元</p>
+            <p>佣金: <span id="commission">0.00</span> 元</p>
+            <p>过户费: <span id="transferFee">0.00</span> 元</p>
+            <p id="stampDutyRow" style="display: none;">印花税: <span id="stampDuty">0.00</span> 元</p>
+            <p class="total">最终结算金额: <span id="totalSettlement">0.00</span> 元</p>
+        </div>
+    </div>
+
+    <script>
+        // 定义费率常量
+        const COMMISSION_RATE = 0.0001;     // 佣金万分之1
+        const COMMISSION_MIN = 5;          // 佣金最低5元
+        const STAMP_DUTY_RATE = 0.0005;    // 印花税万分之5
+        const TRANSFER_FEE_RATE = 0.00001; // 过户费万分之0.1
+
+        /**
+         * 计算股票交易的结算金额。
+         */
+        function calculateSettlement() {
+            const sharesInput = document.getElementById('shares');
+            const priceInput = document.getElementById('price');
+            const transactionType = document.querySelector('input[name="transaction"]:checked').value;
+
+            const shares = parseFloat(sharesInput.value);
+            const price = parseFloat(priceInput.value);
+
+            // **重要：仅当用户输入有效值时才进行弹窗提示，否则只显示0.00**
+            if (isNaN(shares) || shares <= 0) {
+                // 不弹窗，直接清空或显示默认值
+                updateResultDisplay(0, 0, 0, 0, 0); // 清空显示
+                return;
+            }
+            if (isNaN(price) || price <= 0) {
+                // 不弹窗，直接清空或显示默认值
+                updateResultDisplay(0, 0, 0, 0, 0); // 清空显示
+                return;
+            }
+
+            // 成交金额
+            const transactionAmount = shares * price;
+
+            // 佣金计算：万分之1，最低5元
+            let commission = Math.max(transactionAmount * COMMISSION_RATE, COMMISSION_MIN);
+
+            // 过户费计算：成交金额的万分之0.1，无最低限制
+            const transferFee = transactionAmount * TRANSFER_FEE_RATE;
+
+            // 印花税计算：仅卖出时收取
+            let stampDuty = 0;
+            if (transactionType === 'sell') {
+                stampDuty = transactionAmount * STAMP_DUTY_RATE;
+            }
+
+            // 最终结算金额
+            let totalSettlement = 0;
+            if (transactionType === 'buy') {
+                // 买入：成交金额 + 佣金 + 过户费
+                totalSettlement = transactionAmount + commission + transferFee;
+            } else { // sell
+                // 卖出：成交金额 - 佣金 - 过户费 - 印花税
+                totalSettlement = transactionAmount - commission - transferFee - stampDuty;
+            }
+
+            // 更新显示结果
+            updateResultDisplay(transactionAmount, commission, transferFee, stampDuty, totalSettlement);
+        }
+
+        /**
+         * 封装更新结果显示的代码，避免重复。
+         * @param {number} transactionAmount - 成交金额
+         * @param {number} commission - 佣金
+         * @param {number} transferFee - 过户费
+         * @param {number} stampDuty - 印花税
+         * @param {number} totalSettlement - 最终结算金额
+         */
+        function updateResultDisplay(transactionAmount, commission, transferFee, stampDuty, totalSettlement) {
+            document.getElementById('transactionAmount').textContent = transactionAmount.toFixed(2);
+            document.getElementById('commission').textContent = commission.toFixed(2);
+            document.getElementById('transferFee').textContent = transferFee.toFixed(2);
+            document.getElementById('stampDuty').textContent = stampDuty.toFixed(2);
+            document.getElementById('totalSettlement').textContent = totalSettlement.toFixed(2);
+        }
+
+        /**
+         * 处理交易类型切换时的显示逻辑和重新计算。
+         */
+        function handleTransactionTypeChange() {
+            const transactionType = document.querySelector('input[name="transaction"]:checked').value;
+            const stampDutyRow = document.getElementById('stampDutyRow');
+
+            // 根据交易类型显示或隐藏印花税行
+            if (transactionType === 'sell') {
+                stampDutyRow.style.display = 'flex';
+            } else {
+                stampDutyRow.style.display = 'none';
+            }
+
+            // 重新计算以更新显示数据
+            calculateSettlement();
+        }
+
+        // 页面加载完成后，只调用 handleTransactionTypeChange()
+        // 因为 handleTransactionTypeChange() 内部会调用 calculateSettlement()
+        document.addEventListener('DOMContentLoaded', () => {
+            handleTransactionTypeChange();
+        });
+    </script>
+</body>
+</html>

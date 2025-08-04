@@ -26,6 +26,19 @@ h1 {
     font-weight: 600;
 }
 
+.current-funds {
+    margin-top: -10px; /* 微调位置 */
+    margin-bottom: 25px;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #007bff; /* 强调显示 */
+}
+
+.current-funds span {
+    font-size: 1.2em;
+    color: #28a745; /* 更显眼的绿色 */
+}
+
 .transaction-type {
     margin-bottom: 25px;
     display: flex;
@@ -51,6 +64,7 @@ h1 {
 .input-group {
     margin-bottom: 20px;
     text-align: left;
+    position: relative; /* 为错误消息定位 */
 }
 
 .input-group label {
@@ -76,6 +90,18 @@ h1 {
     box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
     outline: none;
 }
+
+/* 错误消息样式：修改了颜色 */
+.error-message {
+    display: none; /* 默认隐藏 */
+    color: #dc3545; /* **这是重点：将颜色改为红色** */
+    font-size: 0.9em;
+    margin-top: 5px;
+    position: absolute;
+    left: 0;
+    bottom: -18px; /* 放置在输入框下方 */
+}
+
 
 button {
     background-color: #007bff;

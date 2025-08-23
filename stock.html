@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="input-group">
+            <label for="availableFunds">可用资金:</label>
+            <input type="number" id="availableFunds" placeholder="初始可用资金" min="0" step="0.01" value="100000">
+            <span class="error-message" id="fundsError"></span>
+        </div>
+        <p class="current-funds">当前可用资金: <span id="currentFundsDisplay">100000.00</span> 元</p>
+
+        <div class="transaction-type">
+            <label>
+                <input type="radio" name="transaction" value="buy" checked onchange="handleTransactionTypeChange()"> 买入
+            </label>
+            <label>
+                <input type="radio" name="transaction" value="sell" onchange="handleTransactionTypeChange()"> 卖出
+            </label>
+        </div>
+
+        <div class="input-group">
+            <label for="shares">股数:</label>
+            <input type="number" id="shares" placeholder="请输入股数" min="1" step="1">
+            <span class="error-message" id="sharesError"></span>
+        </div>
+        <div class="input-group">
+            <label for="price">价格 (元/股):</label>
+            <input type="number" id="price" placeholder="请输入价格" min="0.01" step="0.01">
+            <span class="error-message" id="priceError"></span>
+        </div>
+
+        <button onclick="calculateAndApplySettlement()">计算并更新资金</button>
+
+        <div class="result">
+            <h3>结算详情</h3>
+            <p>成交金额: <span id="transactionAmount">0.00</span> 元</p>
+            <p>佣金: <span id="commission">0.00</span> 元</p>
+            <p>过户费: <span id="transferFee">0.00</span> 元</p>
+            <p id="stampDutyRow" style="display: none;">印花税: <span id="stampDuty">0.00</span> 元</p>
+            <p class="total">本次结算金额: <span id="totalSettlement">0.00</span> 元</p>
+        </div>
+    </div>
+
+    <script>
+        // 定义费率常量
+        const COMMISSION_RATE = 0.0001;     // 佣金万分之1
+        const COMMISSION_MIN = 5;          // 佣金最低5元
+        const STAMP_DUTY_RATE = 0.0005;    // 印花税万分之5
+        const TRANSFER_FEE_RATE = 0.00001; // 过户费万分之0.1
+
+        // 获取 DOM 元素
+        const availableFundsInput = document.getElementById('availableFunds');
+        const currentFundsDisplay = document.getElementById('currentFundsDisplay');
+        const sharesInput = document.getElementById('shares');
+        const priceInput = document.getElementById('price');
+        const fundsError = document.getElementById('fundsError');
+        const sharesError = document.getElementById('sharesError');
+        const priceError = document.getElementById('priceError');
+
+        /**
+         * 显示错误消息
+         * @param {HTMLElement} element - 错误消息的 span 元素
+         * @param {string} message - 要显示的错误文本
+         */
+        function showError(element, message) {
+            element.textContent = message;
+            element.style.display = 'block'; // 显示错误消息
+        }
+
+        /**
+         * 隐藏错误消息
+         * @param {HTMLElement} element - 错误消息的 span 元素
+         */
+        function hideError(element) {
+            element.textContent = '';
+            element.style.display = 'none'; // 隐藏错误消息
+        }
+
+        /**
+         * 核心计算函数，根据输入计算费用，但不直接更新可用资金。
+         * 仅在有有效输入时才进行计算，否则返回默认值。
+         * @returns {object|null} 返回包含各项费用和结算金额的对象，如果输入无效则返回null。
+         */
+        function calculateFees() {
+            const transactionType = document.querySelector('input[name="transaction"]:checked').value;
+
+            const shares = parseFloat(sharesInput.value);
+            const price = parseFloat(priceInput.value);
+
+            // 内部计算时，不进行弹窗，只判断是否为有效数字
+            if (isNaN(shares) || shares <= 0 || isNaN(price) || price <= 0) {
+                return null; // 输入无效时返回null
+            }
+
+            // 成交金额
+            const transactionAmount = shares * price;
+
+            // 佣金计算：万分之1，最低5元
+            let commission = Math.max(transactionAmount * COMMISSION_RATE, COMMISSION_MIN);
+
+            // 过户费计算：成交金额的万分之0.1，无最低限制
+            const transferFee = transactionAmount * TRANSFER_FEE_RATE;
+
+            // 印花税计算：仅卖出时收取
+            let stampDuty = 0;
+            if (transactionType === 'sell') {
+                stampDuty = transactionAmount * STAMP_DUTY_RATE;
+            }
+
+            // 本次交易的结算金额
+            let transactionSettlementAmount = 0;
+            if (transactionType === 'buy') {
+                transactionSettlementAmount = transactionAmount + commission + transferFee;
+            } else { // sell
+                transactionSettlementAmount = transactionAmount - commission - transferFee - stampDuty;
+            }
+
+            return {
+                transactionAmount,
+                commission,
+                transferFee,
+                stampDuty,
+                transactionSettlementAmount
+            };
+        }
+
+        /**
+         * 封装更新结果显示的代码。
+         */
+        function updateResultDisplay(data) {
+            if (data) {
+                document.getElementById('transactionAmount').textContent = data.transactionAmount.toFixed(2);
+                document.getElementById('commission').textContent = data.commission.toFixed(2);
+                document.getElementById('transferFee').textContent = data.transferFee.toFixed(2);
+                document.getElementById('stampDuty').textContent = data.stampDuty.toFixed(2);
+                document.getElementById('totalSettlement').textContent = data.transactionSettlementAmount.toFixed(2);
+            } else {
+                // 如果没有有效数据，则清零显示
+                document.getElementById('transactionAmount').textContent = '0.00';
+                document.getElementById('commission').textContent = '0.00';
+                document.getElementById('transferFee').textContent = '0.00';
+                document.getElementById('stampDuty').textContent = '0.00';
+                document.getElementById('totalSettlement').textContent = '0.00';
+            }
+        }
+
+        /**
+         * 当点击“计算并更新资金”按钮时执行。
+         * 执行计算，校验资金，并更新可用资金。
+         */
+        function calculateAndApplySettlement() {
+            const transactionType = document.querySelector('input[name="transaction"]:checked').value;
+            let currentFunds = parseFloat(availableFundsInput.value);
+
+            // **严格的输入校验，显示错误消息**
+            let isValid = true;
+
+            // 校验可用资金
+            if (isNaN(currentFunds) || currentFunds < 0) {
+                showError(fundsError, '请输入有效的可用资金！');
+                isValid = false;
+            } else {
+                hideError(fundsError);
+            }
+
+            // 校验股数
+            const shares = parseFloat(sharesInput.value);
+            if (isNaN(shares) || shares <= 0) {
+                showError(sharesError, '请输入有效的股数！');
+                isValid = false;
+            } else {
+                hideError(sharesError);
+            }
+
+            // 校验价格
+            const price = parseFloat(priceInput.value);
+            if (isNaN(price) || price <= 0) {
+                showError(priceError, '请输入有效的价格！');
+                isValid = false;
+            } else {
+                hideError(priceError);
+            }
+
+            if (!isValid) {
+                // 如果有任何输入不合法，直接返回，不进行后续计算和资金更新
+                return;
+            }
+
+            const calculationResult = calculateFees(); // 调用纯计算函数
+            // 理论上这里不会是null，因为上面已经做了详细校验
+            if (!calculationResult) {
+                return;
+            }
+
+            let { transactionAmount, commission, transferFee, stampDuty, transactionSettlementAmount } = calculationResult;
+
+            // 资金更新逻辑
+            if (transactionType === 'buy') {
+                if (currentFunds < transactionSettlementAmount) {
+                    alert('可用资金不足以完成本次买入！'); // 资金不足仍用 alert 提示
+                    updateResultDisplay(calculationResult); // 仍显示计算结果
+                    return; // 资金不足则不进行资金扣减
+                }
+                currentFunds -= transactionSettlementAmount;
+            } else { // sell
+                currentFunds += transactionSettlementAmount;
+            }
+
+            // 更新可用资金显示，并同步更新输入框的值
+            availableFundsInput.value = currentFunds.toFixed(2);
+            currentFundsDisplay.textContent = currentFunds.toFixed(2);
+
+            // 更新结算详情显示
+            updateResultDisplay(calculationResult);
+        }
+
+        /**
+         * 处理交易类型切换时的显示逻辑（仅显示/隐藏印花税行），并刷新费用显示。
+         */
+        function handleTransactionTypeChange() {
+            const transactionType = document.querySelector('input[name="transaction"]:checked').value;
+            const stampDutyRow = document.getElementById('stampDutyRow');
+
+            // 根据交易类型显示或隐藏印花税行
+            if (transactionType === 'sell') {
+                stampDutyRow.style.display = 'flex';
+            } else {
+                stampDutyRow.style.display = 'none';
+            }
+
+            // 切换时，只计算并显示费用，不更新可用资金，也不触发校验提示
+            const result = calculateFees();
+            updateResultDisplay(result);
+        }
+
+        // 监听可用资金输入框的变化，实时更新显示，并更新费用预览
+        availableFundsInput.addEventListener('input', () => {
+            let funds = parseFloat(availableFundsInput.value);
+            if (isNaN(funds)) {
+                funds = 0;
+            }
+            currentFundsDisplay.textContent = funds.toFixed(2);
+            hideError(fundsError); // 用户输入时清除错误
+            const result = calculateFees();
+            updateResultDisplay(result);
+        });
+
+        // 监听股数和价格输入框的变化，实时更新费用显示，并清除错误
+        sharesInput.addEventListener('input', () => {
+            hideError(sharesError); // 用户输入时清除错误
+            const result = calculateFees();
+            updateResultDisplay(result);
+        });
+
+        priceInput.addEventListener('input', () => {
+            hideError(priceError); // 用户输入时清除错误
+            const result = calculateFees();
+            updateResultDisplay(result);
+        });
+
+
+        // 页面加载完成后，初始化显示状态和计算结果
+        document.addEventListener('DOMContentLoaded', () => {
+            // 确保初始可用资金显示正确
+            currentFundsDisplay.textContent = parseFloat(availableFundsInput.value).toFixed(2);
+            handleTransactionTypeChange(); // 确保印花税行初始状态正确，并进行一次初始计算显示
+        });
+    </script>
+</body>
+</html>

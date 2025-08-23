@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>  
+    <meta charset="UTF-8">  
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+    <title>开盘啦精选板块插件</title>  
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>  
+        body {  
+            background: linear-gradient(135deg, #1a1a1a, #333);  
+            color: #e0e0e0;  
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;  
+            margin: 0;  
+            padding: 5px;  
+            font-size: 14px;  
+            box-sizing: border-box;
+            min-width: 1200px;
+        }  
+        * {
+            box-sizing: inherit;
+        }
+        #container {  
+            width: 100%;  
+            max-width: 1800px;  
+            margin: 0 auto;  
+            overflow: hidden;  
+            display: flex;  
+            gap: 5px;  
+            height: auto;
+            min-height: calc(100vh - 10px);
+        }  
+        #left-container {  
+            padding: 3px;  
+            flex: 0 1 auto;  
+            max-width: 400px;  
+            min-width: 250px;  
+            overflow: hidden;  
+            position: relative;  
+            height: auto;
+            align-self: flex-start;
+        }  
+        #right-container {  
+            padding: 5px;  
+            flex: 1;  
+            overflow: hidden;  
+            display: flex;  
+            flex-direction: column;  
+            height: auto;
+            align-self: flex-start;
+            min-width: 900px;
+        }  
+        .header-container {  
+            margin-bottom: 5px;  
+            display: flex;  
+            justify-content: space-between;  
+            align-items: center;  
+            padding: 3px 5px;  
+            flex-wrap: wrap;  
+            gap: 10px;
+        }  
+        #search-container {
+            position: relative;
+            width: 250px;
+        }
+        #stock-search {
+            width: 100%;
+            padding: 4px 8px 4px 30px;
+            background-color: #333;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        #stock-search:focus {
+            outline: none;
+            border-color: #800020;
+            box-shadow: 0 0 0 2px rgba(128, 0, 32, 0.2);
+        }
+        #search-icon {
+            position: absolute;
+            left: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #aaa;
+        }
+        #search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: #2c2c2c;
+            border: 1px solid #555;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 100;
+            display: none;
+        }
+        .search-result-item {
+            padding: 5px 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #444;
+        }
+        .search-result-item:hover {
+            background-color: #005E5E;
+        }
+        .search-result-code {
+            color: #B0B0B0;
+            margin-right: 8px;
+        }
+        #buttons {  
+            display: flex;  
+            gap: 5px;  
+        }  
+        button {  
+            padding: 4px 8px;  
+            background: linear-gradient(35deg, #800020, #601010);  
+            color: white;  
+            border: none;  
+            border-radius: 6px;  
+            cursor: pointer;  
+            transition: background 0.3s, transform 0.2s;  
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);  
+            font-size: 12px;  
+            display: flex;  
+            align-items: center;  
+            gap: 4px;
+        }  
+        button:hover {  
+            background: linear-gradient(135deg, #601010, #800020);  
+            transform: translateY(-1px);  
+        }  
+        button i {
+            font-size: 12px;
+        }
+        table {  
+            border-collapse: collapse;  
+            margin-top: 0;  
+            table-layout: auto;  
+            border-spacing: 0;  
+            width: 100%;
+        }  
+        #plate-table {  
+            width: 100%;
+        }
+        th, td {  
+            border: 1px solid #555;  
+            padding: 4px 8px;  
+            color: #F2F2F4;  
+            text-align: left;  
+            white-space: nowrap;  
+            overflow: hidden;  
+            text-overflow: ellipsis;  
+        }  
+        #plate-table th, #plate-table td {  
+            font-size: 13px;  
+        }  
+        th {  
+            background-color: #2c2c2c;  
+            color: #fff;  
+            font-weight: bold;  
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);  
+            border-bottom: 2px solid #444;  
+            position: relative;  
+            cursor: pointer;  
+        }  
+        /* 排序指示器 */
+        th.sortable::after {
+            content: '';
+            position: absolute;
+            right: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+        }
+        th.sort-asc::after {
+            border-bottom: 5px solid #aaa;
+        }
+        th.sort-desc::after {
+            border-top: 5px solid #aaa;
+        }
+        
+        .highlight-limit-up {  
+            color: orange;  
+            font-weight: bold;  
+        }  
+        a {  
+            color: inherit;  
+            text-decoration: none;  
+        }      
+        #plate-table th:nth-child(1), #plate-table td:nth-child(1) {  
+            width: 50%;  
+            padding-left: 20px;  
+            position: relative;  
+        }  
+        #plate-table th:nth-child(2), #plate-table td:nth-child(2) {  
+            width: 15%;
+            text-align: center;  
+        }  
+        #plate-table th:nth-child(3), #plate-table td:nth-child(3) {  
+            width: 15%;
+            text-align: center;  
+        }   
+        #plate-table th:nth-child(4), #plate-table td:nth-child(4) {  
+            width: 20%;
+            text-align: center;  
+        }  
+        /* 调整个股列表各列宽度 - 移除来源列 */
+        #data-table th:nth-child(1), #data-table td:nth-child(1)  {  
+            width: 17%;
+            text-align: left;  
+            padding-left: 20px;  
+        }  
+        #data-table th:nth-child(2), #data-table td:nth-child(2)  {  
+            width: 12%;
+            text-align: center;  
+            color: #B0B0B0;  
+        }        
+        #data-table th:nth-child(3), #data-table td:nth-child(3) {  
+            width: 12%;
+            text-align: center;  
+        }  
+        #data-table th:nth-child(4), #data-table td:nth-child(4) {  
+            width: 12%;
+            text-align: center;  
+        }  
+        #data-table th:nth-child(5), #data-table td:nth-child(5) {  
+            width: 12%;
+            text-align: center;  
+        }  
+        #data-table th:nth-child(6), #data-table td:nth-child(6) {  
+            width: 17%;
+            text-align: center;  
+        }  
+        #data-table th:nth-child(7), #data-table td:nth-child(7) {  
+            width: 18%;
+            max-width: none;  
+        }  
+        
+        .limit-up-change {  
+            background-color: #800000 !important;  
+            color: white !important;  
+            font-weight: bold;  
+        }  
+        
+        .cyb-stock { color: #60CDFF; }  
+        .kcb-stock { color: #9CFFB0; }  
+        .bzb-stock { color: #EFBBFF; }  
+        .concept-text { color: #FEA629; }  
+        .change-bold { font-weight: bold; }  
+        .change-red { color: red; }  
+        .change-green { color: #00B42A; }
+        
+        .plate-rank {  
+            position: absolute;  
+            left: 5px;  
+            font-weight: bold;  
+        }  
+        #plate-table-body tr:nth-child(1) .plate-rank { color: #FF50DB; }  
+        #plate-table-body tr:nth-child(2) .plate-rank { color: #FFFA78; }  
+        #plate-table-body tr:nth-child(3) .plate-rank { color: #06FF84; }  
+        
+        .sub-plate-row { background-color: #333 !important; }  
+        .sub-plate-row td {  
+            padding-left: 35px !important;  
+            color: #CECECE !important;  
+        }  
+        /* 选中的子板块显示粉色高亮 */
+        .sub-plate-row.selected { 
+            background-color: #FFB6C1 !important; 
+            color: #000 !important; 
+            font-weight: bold;
+        }
+        .sub-plate-row.selected td {
+            color: #000 !important;
+        }
+        
+        .has-sub-plate td:first-child::before {  
+            content: "〓";  
+            position: absolute;  
+            left: 15px;  
+            color: #AAAAAA;  
+            font-size: 12px;
+        }  
+        .expanded td:first-child::before { content: "▼"; }  
+        .plate-name {  
+            display: inline-block;  
+            min-width: 80px;  
+            overflow: hidden;  
+            text-overflow: ellipsis;  
+            white-space: nowrap;  
+        }  
+        #plate-table-body tr:hover, #data-table-body tr:hover {  
+            background-color: #005E5E !important;  
+        }  
+        #plate-table-body tr.selected:not(.sub-plate-row) {  
+            color: #00ffff !important;  
+            font-weight: bold;  
+        }  
+        .stock-count { font-weight: bold; }  
+        .filter-status {  
+            color: #00FFFF;  
+            font-size: 12px;  
+            margin-left: 10px;  
+        }
+        
+        /* 数据更新动画 */
+        @keyframes flash {
+            0% { background-color: rgba(255, 255, 255, 0.1); }
+            50% { background-color: rgba(255, 255, 255, 0.2); }
+            100% { background-color: transparent; }
+        }
+        .updating { animation: flash 1s ease; }
+        
+        .change-arrow {  
+            margin-right: 2px;  
+            font-size: 10px;  
+        }  
+        .limit-up-count {  
+            color: #FF4500;  
+            font-weight: bold;  
+        }  
+        .filter-controls {  
+            display: flex;  
+            align-items: center;  
+            gap: 8px;  
+            margin-left: 5px;  
+            flex-wrap: wrap;  
+            margin-top: 3px;  
+        }  
+        .filter-label {  
+            font-size: 12px;  
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }  
+        .filter-checkbox, .filter-radio {  
+            accent-color: #800020;  
+        }  
+        #data-table-container {  
+            flex: 1;  
+            overflow: auto;  
+            min-height: 0;  
+        }  
+        /* ST股票特殊标记 */
+        .st-stock {
+            color: #FF9999 !important;
+            font-style: italic;
+        }
+        
+        /* 大单标记 */
+        .large-order {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #00FFFF;
+            margin-right: 3px;
+        }
+        
+        /* 加载状态 */
+        .loading-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            display: none;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #800020;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 导出提示弹窗 */
+        #export-tooltip {
+            position: fixed;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            z-index: 1000;
+            display: none;
+        }
+        .tooltip-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #00FFFF;
+        }
+        .tooltip-content {
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .tooltip-path {
+            color: #FFD700;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .tooltip-close {
+            margin-top: 10px;
+            text-align: right;
+            cursor: pointer;
+            color: #aaa;
+        }
+        .tooltip-close:hover {
+            color: #fff;
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 1400px) {
+            #container {
+                max-width: 1600px;
+            }
+        }
+        
+        @media (max-width: 1200px) {
+            #container {
+                max-width: 1400px;
+            }
+            #left-container {
+                max-width: 350px;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            body {
+                min-width: 1000px;
+            }
+            #container {
+                flex-direction: column;
+            }
+            #left-container, #right-container {
+                width: 100%;
+                max-width: 100%;
+            }
+            #left-container {
+                max-height: 300px;
+                overflow: auto;
+            }
+            .header-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            #buttons {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .filter-controls {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            #search-container {
+                width: 100%;
+            }
+        }
+    </style>  
+</head>  
+<body>  
+    <div id="container">  
+        <div id="left-container">
+            <div class="loading-indicator" id="left-loading">
+                <div class="loading-spinner"></div>
+                <div>加载中...</div>
+            </div>            
+            <table id="plate-table">  
+                <thead>  
+                    <tr>  
+                        <th>名称</th>  
+                        <th>强度</th>  
+                        <th class="sortable" data-sort="growth">涨幅</th>  
+                        <th>涨停/总股数</th>  
+                    </tr>  
+                </thead>  
+                <tbody id="plate-table-body">  
+                </tbody>  
+            </table>  
+        </div>  
+        <div id="right-container">  
+            <div class="header-container">  
+                <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <h2>成分股数量 <span class="stock-count" id="stock-count">(0)</span> <span class="filter-status" id="filter-status"></span></h2>
+                        <h3><a href="stock.html" target="_blank">&nbsp;</a></h3>
+                        <div id="search-container">
+                            <i class="fas fa-search" id="search-icon"></i>
+                            <input type="text" id="stock-search" placeholder="搜索股票代码或名称...">
+                            <div id="search-results"></div>
+                        </div>
+                    </div>
+                    <div class="filter-controls">
+                        <label class="filter-label">
+                            <input type="checkbox" id="filter-kcb" class="filter-checkbox" checked>
+                            剔除科创板
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" id="filter-bzb" class="filter-checkbox" checked>
+                            剔除北证
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" id="filter-st" class="filter-checkbox" checked>
+                            剔除ST
+                        </label>
+                        <label class="filter-label">
+                            <input type="checkbox" id="filter-market-cap" class="filter-checkbox" checked>
+                            剔除市值超200亿
+                        </label>
+                    </div>
+                </div>
+                <div id="buttons">  
+                    <button id="export-txt-button"><i class="fas fa-file-export"></i> 导出至TXT</button>  
+                    <button id="export-ebk-button"><i class="fas fa-file-code"></i> 导出至EBK</button>  
+                    <button id="refresh-button"><i class="fas fa-sync-alt"></i> 手动刷新</button>  
+                </div>  
+            </div>  
+            <div id="data-table-container">
+                <div class="loading-indicator" id="right-loading">
+                    <div class="loading-spinner"></div>
+                    <div>加载中...</div>
+                </div>
+                <table id="data-table">  
+                    <thead>  
+                        <tr>  
+                            <th>股票名称</th>  
+                            <th>代码</th>  
+                            <th>价格</th>  
+                            <th class="sortable" data-sort="growth">涨幅</th>  
+                            <th>连板</th>  
+                            <th>概念</th>  
+                            <th>状态</th>
+                            <!-- 移除来源列 -->
+                        </tr>  
+                    </thead>  
+                    <tbody id="data-table-body">  
+                    </tbody>  
+                </table>  
+            </div>
+        </div>  
+    </div>  
+    
+    <!-- 导出提示弹窗 -->
+    <div id="export-tooltip">
+        <div class="tooltip-title">导出提示</div>
+        <div class="tooltip-content">
+            1. TXT文件已成功导出<br>
+            2. 文件包含当前板块的所有股票代码<br>
+            3. 格式为纯文本，每行一个股票代码
+        </div>
+        <div class="tooltip-close">关闭</div>
+    </div>
+    
+    <script>  
+        const plateApiUrl = 'https://apphq.longhuvip.com/w1/api/index.php?Order=1&a=RealRankingInfo&st=30&apiv=w21&Type=1&c=ZhiShuRanking&PhoneOSNew=1&VerSion=5&ZSType=7&';  
+        let platesList = [];  
+        let currentPlateName = '';  
+        let subPlatesData = {};  // 存储子板块基本信息
+        let subPlateStocksData = {};  // 存储子板块股票数据
+        let subPlateLimitUpData = {};  // 存储子板块涨停数量
+        let subPlatePreviousLimitUpData = {}; 
+        let subPlateChangeData = {};  // 存储子板块涨跌幅
+        let subPlatePreviousChangeData = {};  
+        let lastSelectedPlateRow = null;  
+        let lastSelectedStockRow = null;  
+        let lastSelectedSubPlateRow = null;  
+        let rankUpTimers = {};  
+        let previousRankings = {};  
+        let autoRefreshInterval = null;  
+        let isAutoRefreshEnabled = true;  
+        let refreshInProgress = false;  
+        let subPlateStockCount = {};  // 存储子板块股票数量
+        let parentPlateMergedStockCount = {};  // 存储主板块合并后的股票数量
+        let parentPlateMergedLimitUpCount = {};  // 存储主板块合并后的涨停数量
+        let currentPlateID = null;  
+        let loadedStockIds = new Set(); 
+        let stockGrowthData = {};  
+        let currentStocksData = [];  
+        let allStocksData = []; // 存储所有股票数据用于搜索
+        let currentPlatesData = [];  
+        let currentSort = { field: 'growth', direction: 'desc', type: 'stock' };  
+        
+        // 显示加载状态
+        function showLoading(containerId) {
+            document.getElementById(containerId).style.display = 'block';
+        }
+        
+        // 隐藏加载状态
+        function hideLoading(containerId) {
+            document.getElementById(containerId).style.display = 'none';
+        }
+        
+        // 初始化排序事件监听
+        function initSorting() {
+            // 股票表格排序
+            document.querySelectorAll('#data-table th.sortable').forEach(th => {
+                th.addEventListener('click', function() {
+                    const field = this.getAttribute('data-sort');
+                    currentSort.type = 'stock';
+                    
+                    document.querySelectorAll('#data-table th.sortable, #plate-table th.sortable').forEach(header => {
+                        header.classList.remove('sort-asc', 'sort-desc');
+                    });
+                    
+                    if (currentSort.field === field) {
+                        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        currentSort.field = field;
+                        currentSort.direction = 'desc';
+                    }
+                    
+                    this.classList.add(`sort-${currentSort.direction}`);
+                    sortAndDisplayStocks();
+                });
+            });
+            
+            // 板块表格排序
+            document.querySelectorAll('#plate-table th.sortable').forEach(th => {
+                th.addEventListener('click', function() {
+                    const field = this.getAttribute('data-sort');
+                    currentSort.type = 'plate';
+                    
+                    document.querySelectorAll('#data-table th.sortable, #plate-table th.sortable').forEach(header => {
+                        header.classList.remove('sort-asc', 'sort-desc');
+                    });
+                    
+                    if (currentSort.field === field) {
+                        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        currentSort.field = field;
+                        currentSort.direction = 'desc';
+                    }
+                    
+                    this.classList.add(`sort-${currentSort.direction}`);
+                    sortAndDisplayPlates();
+                });
+            });
+        }
+        
+        // 初始化搜索功能
+        function initSearch() {
+            const searchInput = document.getElementById('stock-search');
+            const searchResults = document.getElementById('search-results');
+            
+            searchInput.addEventListener('input', function(e) {
+                const query = e.target.value.trim().toLowerCase();
+                
+                if (query.length < 1) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+                
+                // 过滤匹配的股票
+                const matches = allStocksData.filter(stock => {
+                    const code = stock.stockData[0] || '';
+                    const name = stock.stockData[1] || '';
+                    return code.toLowerCase().includes(query) || name.toLowerCase().includes(query);
+                });
+                
+                if (matches.length > 0) {
+                    searchResults.innerHTML = '';
+                    matches.slice(0, 10).forEach(stock => {
+                        const item = document.createElement('div');
+                        item.className = 'search-result-item';
+                        
+                        const codeSpan = document.createElement('span');
+                        codeSpan.className = 'search-result-code';
+                        codeSpan.textContent = stock.stockData[0];
+                        
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = stock.stockData[1];
+                        
+                        item.appendChild(codeSpan);
+                        item.appendChild(nameSpan);
+                        
+                        item.addEventListener('click', () => {
+                            // 跳转到股票详情页
+                            window.open( `https://stockpage.10jqka.com.cn/${stock.stockData[0]}/`, `_blank`);
+                        });
+                        
+                        searchResults.appendChild(item);
+                    });
+                    
+                    searchResults.style.display = 'block';
+                } else {
+                    searchResults.innerHTML = '<div class="search-result-item">没有找到匹配的股票</div>';
+                    searchResults.style.display = 'block';
+                }
+            });
+            
+            // 点击页面其他地方关闭搜索结果
+            document.addEventListener('click', function(e) {
+                if (!document.getElementById('search-container').contains(e.target)) {
+                    searchResults.style.display = 'none';
+                }
+            });
+        }
+        
+        // 排序股票并显示
+        function sortAndDisplayStocks() {
+            let sortedStocks = [...currentStocksData];
+            
+            sortedStocks.sort((a, b) => {
+                let valueA, valueB;
+                
+                switch(currentSort.field) {
+                    case 'growth':
+                        valueA = parseFloat(a.stockData[6]) || 0;
+                        valueB = parseFloat(b.stockData[6]) || 0;
+                        break;
+                    default:
+                        return 0;
+                }
+                
+                return currentSort.direction === 'asc' ? valueA - valueB : valueB - valueA;
+            });
+            
+            displaySortedStocks(sortedStocks);
+        }
+        
+        // 板块排序
+        function sortAndDisplayPlates() {
+            let sortedPlates = [...currentPlatesData];
+            
+            sortedPlates.sort((a, b) => {
+                let valueA, valueB;
+                
+                switch(currentSort.field) {
+                    case 'growth':
+                        valueA = parseFloat(a[3]) || 0;
+                        valueB = parseFloat(b[3]) || 0;
+                        break;
+                    default:
+                        return 0;
+                }
+                
+                return currentSort.direction === 'asc' ? valueA - valueB : valueB - valueA;
+            });
+            
+            platesList = sortedPlates;
+            const currentRankings = {};  
+            platesList.forEach((item, index) => {  
+                currentRankings[item[0]] = index + 1;  
+            });
+            previousRankings = currentRankings;
+            updatePlateTable(currentRankings);
+        }
+        
+        // 显示排序后的股票 - 移除来源列
+        function displaySortedStocks(stocks) {
+            const tableBody = document.getElementById('data-table-body');  
+            tableBody.innerHTML = "";
+            
+            const newGrowthData = {};
+            
+            stocks.forEach(item => {  
+                const stockData = item.stockData;
+                
+                const row = tableBody.insertRow();  
+                row.setAttribute('data-stock-code', stockData[0]);  
+                loadedStockIds.add(stockData[0]);
+                
+                const cell1 = row.insertCell(0);  
+                const cell2 = row.insertCell(1);  
+                const cell3 = row.insertCell(2);  
+                const cell4 = row.insertCell(3);  
+                const cell5 = row.insertCell(4);  
+                const cell6 = row.insertCell(5);  
+                const cell7 = row.insertCell(6);  // 移除来源列
+                
+                const stockCode = stockData[0];  
+                const stockName = stockData[1] || '';  
+                const stockUrl = `https://stockpage.10jqka.com.cn/${stockCode}/`;  
+                const priceChange = stockData[6] || 0;  
+                const isLimitUp = stockData[23] && !stockData[23].includes('昨') && !stockName.toLowerCase().includes('st');
+                
+                newGrowthData[stockCode] = priceChange;
+                
+                // 股票名称单元格
+                const nameContainer = document.createElement('div');
+                nameContainer.style.display = 'inline-flex';
+                nameContainer.style.alignItems = 'center';
+                
+                const nameText = document.createTextNode(stockName);
+                nameContainer.appendChild(nameText);
+                cell1.appendChild(nameContainer);
+                
+                let stockCodePre = stockCode.substring(0, 2);
+                
+                if (stockName.toLowerCase().includes('st')) {
+                    cell1.classList.add('st-stock');
+                }
+                
+                switch (stockCodePre) {  
+                    case "30": cell1.classList.add('cyb-stock'); break;  
+                    case "68": cell1.classList.add('kcb-stock'); break;  
+                    case "82": case "83": case "87": case "88": case "43": case "92":  
+                        cell1.classList.add('bzb-stock'); break;  
+                }  
+                
+                cell2.innerText = stockCode;  
+                cell3.innerText = stockData[5] ? stockData[5].toFixed(2) : '';  
+                
+                // 涨幅单元格
+                cell4.className = 'change-bold';  
+                cell4.innerText = stockData[6] !== undefined ? (stockData[6] ? stockData[6].toFixed(2) + '%' : '') : '';  
+                
+                if (stockCodePre == "30" && priceChange > 10) {  
+                    cell4.classList.add('change-red');  
+                } else if (stockCodePre == "68" && priceChange > 10) {  
+                    cell4.classList.add('change-red');  
+                } else if (stockCodePre == "60" && priceChange > 6) {  
+                    cell4.classList.add('change-red');  
+                } else if (stockCodePre == "00" && priceChange > 6) {  
+                    cell4.classList.add('change-red');  
+                } else if (priceChange < 0) {
+                    cell4.classList.add('change-green');
+                }  
+                
+                if (isLimitUp) {  
+                    cell4.classList.add('limit-up-change');  
+                }  
+                
+                if (stockGrowthData[stockCode] !== undefined && 
+                    Math.abs(stockGrowthData[stockCode] - priceChange) > 0.01) {
+                    cell4.classList.add('updating');
+                    setTimeout(() => cell4.classList.remove('updating'), 1000);
+                }
+                
+                cell5.innerText = stockData[23] || '';  
+                if (isLimitUp) {  
+                    cell5.classList.add('highlight-limit-up');  
+                }  
+                
+                cell6.innerText = stockData[4] || '';  
+                cell6.classList.add('concept-text');  
+                cell7.innerText = stockData[24] || '';  
+                
+                row.style.cursor = 'pointer';  
+                row.addEventListener('click', (e) => {  
+                    if (e.target.tagName === 'A') return;  
+                    if (lastSelectedStockRow) {  
+                        lastSelectedStockRow.classList.remove('selected');  
+                    }  
+                    row.classList.add('selected');  
+                    lastSelectedStockRow = row;  
+                    setTimeout(() => {  
+                        window.open( stockUrl, `_blank`);
+                    }, 200);  
+                });  
+            });  
+            
+            stockGrowthData = newGrowthData;
+            
+            if (stocks.length === 0) {  
+                const row = tableBody.insertRow();  
+                const cell = row.insertCell(0);  
+                cell.colSpan = 7; // 调整列数
+                cell.innerText = "没有符合条件的股票数据";
+                cell.style.textAlign = "center";
+            }  
+            
+            hideLoading('right-loading');
+        }
+        
+        // 过滤选项变化事件
+        document.getElementById('filter-kcb').addEventListener('change', function() {
+            if (currentPlateID) {
+                loadedStockIds.clear();
+                if (lastSelectedSubPlateRow) {
+                    const subPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                    const parentId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                    displayComponentStocks(subPlateId, parentId);
+                } else {
+                    displayComponentStocks(currentPlateID);
+                }
+            }
+        });
+        
+        document.getElementById('filter-bzb').addEventListener('change', function() {
+            if (currentPlateID) {
+                loadedStockIds.clear();
+                if (lastSelectedSubPlateRow) {
+                    const subPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                    const parentId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                    displayComponentStocks(subPlateId, parentId);
+                } else {
+                    displayComponentStocks(currentPlateID);
+                }
+            }
+        });
+        
+        document.getElementById('filter-st').addEventListener('change', function() {
+            if (currentPlateID) {
+                loadedStockIds.clear();
+                if (lastSelectedSubPlateRow) {
+                    const subPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                    const parentId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                    displayComponentStocks(subPlateId, parentId);
+                } else {
+                    displayComponentStocks(currentPlateID);
+                }
+            }
+        });
+        
+        document.getElementById('filter-market-cap').addEventListener('change', function() {
+            if (currentPlateID) {
+                loadedStockIds.clear();
+                if (lastSelectedSubPlateRow) {
+                    const subPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                    const parentId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                    displayComponentStocks(subPlateId, parentId);
+                } else {
+                    displayComponentStocks(currentPlateID);
+                }
+            }
+        });
+        
+        // 手动刷新按钮事件
+        document.getElementById('refresh-button').addEventListener('click', function() {
+            if (!refreshInProgress) {
+                this.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> 刷新中...';
+                loadedStockIds.clear();
+                fetchPlates(true).then(() => {
+                    this.innerHTML = '<i class="fas fa-sync-alt"></i> 手动刷新';
+                });
+            }
+        });
+        
+        // 自动刷新
+        function startAutoRefresh() {  
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);  
+            
+            autoRefreshInterval = setInterval(() => {  
+                if (isAutoRefreshEnabled && isTradingTime()) {  
+                    const wasRefreshed = refreshInProgress;
+                    if (!wasRefreshed) {
+                        let selectedSubPlateId = null;
+                        let selectedParentPlateId = null;
+                        
+                        if (lastSelectedSubPlateRow) {
+                            selectedSubPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                            selectedParentPlateId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                        }
+                        
+                        loadedStockIds.clear();
+                        fetchPlates().then(() => {
+                            if (selectedSubPlateId && selectedParentPlateId) {
+                                const subRows = document.querySelectorAll(
+                                    `.sub-plate-row[data-parent-id="${selectedParentPlateId}"][data-subplate-id="${selectedSubPlateId}"]`
+                                );
+                                if (subRows.length > 0) {
+                                    if (lastSelectedSubPlateRow) {
+                                        lastSelectedSubPlateRow.classList.remove('selected');
+                                    }
+                                    subRows[0].classList.add('selected');
+                                    lastSelectedSubPlateRow = subRows[0];
+                                }
+                            }
+                        });
+                    }
+                }  
+            }, 15000);
+        }  
+        
+        function isTradingTime() {  
+            const now = new Date();  
+            const hours = now.getHours();  
+            const minutes = now.getMinutes();  
+            
+            return (hours > 9 || (hours === 9 && minutes >= 15)) &&  
+                   (hours < 15 || (hours === 15 && minutes <= 15));  
+        }  
+        
+        async function fetchPlates(forceRefresh = false) {  
+            if (refreshInProgress && !forceRefresh) return;
+            
+            refreshInProgress = true;
+            showLoading('left-loading');
+            try {  
+                const response = await fetch(plateApiUrl + (forceRefresh ? `timestamp=${new Date().getTime()}` : ''));  
+                const data = await response.json();  
+                const uniquePlates = [];
+                const plateIds = new Set();
+                data.list.forEach(item => {
+                    if (!plateIds.has(item[0]) && item[1] !== "ST板块") {
+                        plateIds.add(item[0]);
+                        uniquePlates.push(item);
+                    }
+                });
+                
+                currentPlatesData = uniquePlates.slice(0, 5);
+                
+                if (currentSort.type === 'plate' && currentSort.field === 'growth') {
+                    sortAndDisplayPlates();
+                } else {
+                    platesList = currentPlatesData;
+                    const currentRankings = {};  
+                    platesList.forEach((item, index) => {  
+                        currentRankings[item[0]] = index + 1;  
+                    });
+                    updatePlateTable(currentRankings);
+                }
+                
+                let selectedPlateId = null;
+                let selectedSubPlateId = null;
+                let selectedParentPlateId = null;
+                
+                if (lastSelectedPlateRow && !lastSelectedPlateRow.classList.contains('sub-plate-row')) {
+                    const plateRows = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)');
+                    const selectedIndex = Array.from(plateRows).indexOf(lastSelectedPlateRow);
+                    if (selectedIndex >= 0 && selectedIndex < platesList.length) {
+                        selectedPlateId = platesList[selectedIndex][0];
+                    }
+                } else if (lastSelectedSubPlateRow) {
+                    selectedSubPlateId = lastSelectedSubPlateRow.getAttribute('data-subplate-id');
+                    selectedParentPlateId = lastSelectedSubPlateRow.getAttribute('data-parent-id');
+                }
+                
+                if (platesList.length > 0) {  
+                    for (let i = 0; i < platesList.length; i++) {  
+                        fetchSubPlates(platesList[i][0], i, forceRefresh);
+                    }  
+                    
+                    if (selectedSubPlateId && selectedParentPlateId) {
+                        setTimeout(() => {
+                            const subRows = document.querySelectorAll(
+                                `.sub-plate-row[data-parent-id="${selectedParentPlateId}"][data-subplate-id="${selectedSubPlateId}"]`
+                            );
+                            if (subRows.length > 0) {
+                                const plateIndex = platesList.findIndex(plate => plate[0] === selectedParentPlateId);
+                                if (plateIndex !== -1) {
+                                    const plateRow = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)')[plateIndex];
+                                    if (plateRow) {
+                                        if (!plateRow.classList.contains('expanded')) {
+                                            plateRow.click();
+                                        }
+                                        
+                                        setTimeout(() => {
+                                            if (lastSelectedSubPlateRow) {
+                                                lastSelectedSubPlateRow.classList.remove('selected');
+                                            }
+                                            subRows[0].classList.add('selected');
+                                            lastSelectedSubPlateRow = subRows[0];
+                                            displayComponentStocks(selectedSubPlateId, selectedParentPlateId);
+                                            currentPlateID = selectedSubPlateId;
+                                        }, 500);
+                                    }
+                                }
+                            }
+                        }, 1000);
+                    } else if (selectedPlateId || !lastSelectedPlateRow || forceRefresh) {
+                        const plateIndex = selectedPlateId 
+                            ? platesList.findIndex(plate => plate[0] === selectedPlateId) 
+                            : 0;
+                            
+                        if (plateIndex !== -1) {
+                            displayComponentStocks(platesList[plateIndex][0]);  
+                            setActivePlate(plateIndex, true);  
+                            currentPlateName = platesList[plateIndex][1];  
+                            currentPlateID = platesList[plateIndex][0];
+                        }
+                    }
+                }  
+                
+                previousRankings = currentRankings || {};  
+            } catch (error) {  
+                console.error("获取板块数据失败:", error);  
+            } finally {
+                refreshInProgress = false;
+                hideLoading('left-loading');
+            }  
+        }  
+        
+        async function fetchSubPlates(plateID, plateIndex, forceRefresh = false) {  
+            const subPlateUrl = `https://apphq.longhuvip.com/w1/api/index.php?a=SonPlate_Info&c=ZhiShuRanking&PhoneOSNew=1&VerSion=5&apiv=w26&PlateID=${plateID}&${forceRefresh ? `timestamp=${new Date().getTime()}` : ''}`;  
+            try {  
+                const response = await fetch(subPlateUrl);  
+                const data = await response.json();  
+                if (data.List && data.List.length > 0) {  
+                    const uniqueSubPlates = [];
+                    const subPlateIds = new Set();
+                    
+                    data.List.forEach(item => {
+                        if (!subPlateIds.has(item[0])) {
+                            subPlateIds.add(item[0]);
+                            uniqueSubPlates.push(item);
+                        }
+                    });
+                    
+                    // 子板块数量限制为前3个
+                    const topSubPlates = uniqueSubPlates.map(item => ({  
+                        code: item[0],  
+                        name: item[1],  
+                        qd: parseFloat(item[2]),
+                        change: parseFloat(item[3]), 
+                        stockCount: parseInt(item[4]) || 0 
+                    })).sort((a, b) => b.qd - a.qd).slice(0, 3);  
+                    
+                    if (!subPlatePreviousChangeData[plateID]) {
+                        subPlatePreviousChangeData[plateID] = {};
+                    }
+                    if (!subPlatePreviousLimitUpData[plateID]) {
+                        subPlatePreviousLimitUpData[plateID] = {};
+                    }
+                    
+                    topSubPlates.forEach(subPlate => {
+                        subPlatePreviousChangeData[plateID][subPlate.code] = 
+                            subPlateChangeData[plateID] ? subPlateChangeData[plateID][subPlate.code] : subPlate.change;
+                            
+                        subPlatePreviousLimitUpData[plateID][subPlate.code] = 
+                            subPlateLimitUpData[plateID] ? subPlateLimitUpData[plateID][subPlate.code] : 0;
+                    });
+                    
+                    subPlatesData[plateID] = topSubPlates;  
+                    
+                    if (!subPlateStockCount[plateID]) {
+                        subPlateStockCount[plateID] = {};
+                    }
+                    topSubPlates.forEach(subPlate => {
+                        subPlateStockCount[plateID][subPlate.code] = subPlate.stockCount;
+                    });
+                    
+                    if (!subPlateChangeData[plateID]) {
+                        subPlateChangeData[plateID] = {};
+                    }
+                    topSubPlates.forEach(subPlate => {
+                        subPlateChangeData[plateID][subPlate.code] = subPlate.change;
+                    });
+                    
+                    // 为每个子板块获取股票数据
+                    const subPlatePromises = topSubPlates.map((subPlate, index) => 
+                        fetchSubPlateStocks(plateID, subPlate.code, index, forceRefresh)
+                    );
+                    
+                    // 等待所有子板块股票数据加载完成后计算合并数据
+                    await Promise.all(subPlatePromises);
+                    calculateMergedParentPlateData(plateID);
+                    
+                    const plateRow = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)')[plateIndex];  
+                    if (plateRow) plateRow.classList.add('has-sub-plate');  
+                    if (plateRow && plateRow.classList.contains('expanded')) {
+                        updateSubPlatesDisplay(plateID, plateIndex);
+                    }
+                }  
+            } catch (error) {  
+                console.error("获取子板块数据失败:", error);  
+            }  
+        }  
+        
+        // 获取子板块股票数据
+        async function fetchSubPlateStocks(parentPlateID, subPlateID, subPlateIndex, forceRefresh = false) {
+            const baseUrl = `https://apphq.longhuvip.com/w1/api/index.php?Order=1&st=60&a=ZhiShuStockList_W8&c=ZhiShuRanking&PhoneOSNew=1&apiv=W21&Type=6&PlateID=${subPlateID}${forceRefresh ? `&timestamp=${new Date().getTime()}` : ''}`;  
+            let allStocks = [];  
+            let index = 0;  
+            let hasMoreData = true;  
+            const stockIds = new Set();
+            
+            try {  
+                while (hasMoreData) {  
+                    const stockApiUrl = `${baseUrl}&Index=${index}`;  
+                    const response = await fetch(stockApiUrl);  
+                    const data = await response.json();  
+                    const stocksList = data.list || [];  
+                    
+                    if (stocksList.length > 0) {  
+                        stocksList.forEach(stock => {
+                            if (!stockIds.has(stock[0])) {
+                                stockIds.add(stock[0]);
+                                allStocks.push(stock);
+                            }
+                        });
+                        index += stocksList.length;  
+                    } else {  
+                        hasMoreData = false;  
+                    }  
+                }  
+                
+                // 存储子板块股票数据
+                if (!subPlateStocksData[parentPlateID]) {
+                    subPlateStocksData[parentPlateID] = {};
+                }
+                subPlateStocksData[parentPlateID][subPlateID] = allStocks;
+                
+                // 计算该子板块的涨停数量
+                calculateSubPlateLimitUpCount(parentPlateID, subPlateID, allStocks);
+                
+                return allStocks;
+            } catch (error) {  
+                console.error(`获取子板块 ${subPlateID} 股票数据失败:`, error);  
+                return [];
+            }  
+        }
+        
+        // 计算子板块涨停数量
+        function calculateSubPlateLimitUpCount(parentPlateID, subPlateID, stocks) {
+            let limitUpCount = 0;  
+            stocks.forEach(item => {  
+                const stockName = item[1] || '';  
+                const lianBanContent = item[23] || '';  
+                const priceChange = item[6] || 0;  
+                const stockCode = item[0] || '';
+                
+                // 过滤掉不需要的股票
+                const isKcb = stockCode.startsWith('68');
+                const filterKcb = document.getElementById('filter-kcb').checked;
+                
+                const isBzb = ['82', '83', '87', '88', '43', '92'].some(prefix => stockCode.startsWith(prefix));
+                const filterBzb = document.getElementById('filter-bzb').checked;
+                
+                const isSt = stockName && stockName.toLowerCase().includes('st');
+                const filterSt = document.getElementById('filter-st').checked;
+                
+                const isDeclining = priceChange < 0;
+                
+                // 假设市值数据在索引40的位置（单位：亿元）
+                const marketCap = parseFloat(item[40] || 0);
+                const isLargeCap = marketCap > 200;
+                const filterMarketCap = document.getElementById('filter-market-cap').checked;
+                
+                if ((filterKcb && isKcb) || (filterBzb && isBzb) || (filterSt && isSt) || 
+                    isDeclining || (filterMarketCap && isLargeCap)) {
+                    return;
+                }
+                
+                if (lianBanContent && !lianBanContent.includes('昨') && !stockName.toLowerCase().includes('st')) {  
+                    limitUpCount++;  
+                }  
+            });  
+            
+            if (!subPlateLimitUpData[parentPlateID]) {
+                subPlateLimitUpData[parentPlateID] = {};
+            }
+            subPlateLimitUpData[parentPlateID][subPlateID] = limitUpCount;
+        }
+        
+        // 计算主板块合并后的股票数量和涨停数量
+        function calculateMergedParentPlateData(parentPlateID) {
+            if (!subPlatesData[parentPlateID] || subPlatesData[parentPlateID].length === 0) {
+                parentPlateMergedStockCount[parentPlateID] = 0;
+                parentPlateMergedLimitUpCount[parentPlateID] = 0;
+                return;
+            }
+            
+            const uniqueStockCodes = new Set();
+            let totalLimitUpCount = 0;
+            
+            // 遍历所有子板块
+            subPlatesData[parentPlateID].forEach(subPlate => {
+                const subPlateId = subPlate.code;
+                const stocks = subPlateStocksData[parentPlateID] && subPlateStocksData[parentPlateID][subPlateId] || [];
+                
+                // 统计去重后的股票
+                stocks.forEach(stock => {
+                    const stockCode = stock[0];
+                    if (!uniqueStockCodes.has(stockCode)) {
+                        uniqueStockCodes.add(stockCode);
+                    }
+                });
+                
+                // 累加涨停数量
+                totalLimitUpCount += subPlateLimitUpData[parentPlateID] && subPlateLimitUpData[parentPlateID][subPlateId] || 0;
+            });
+            
+            // 保存计算结果
+            parentPlateMergedStockCount[parentPlateID] = uniqueStockCodes.size;
+            parentPlateMergedLimitUpCount[parentPlateID] = totalLimitUpCount;
+            
+            // 更新主板块显示
+            const plateRows = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)');
+            const plateIndex = platesList.findIndex(plate => plate[0] === parentPlateID);
+            
+            if (plateIndex !== -1 && plateIndex < plateRows.length) {
+                const plateRow = plateRows[plateIndex];
+                if (plateRow && plateRow.cells[3]) {
+                    plateRow.cells[3].innerText = `${totalLimitUpCount}/${uniqueStockCodes.size}`;
+                }
+            }
+        }
+        
+        // 更新子板块显示
+        function updateSubPlatesDisplay(plateID, plateIndex) {
+            const existingSubRows = document.querySelectorAll(`.sub-plate-row[data-parent-id="${plateID}"]`);
+            existingSubRows.forEach(row => row.remove());
+            
+            if (subPlatesData[plateID]) {
+                const plateRow = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)')[plateIndex];
+                if (plateRow) {
+                    const rowIndex = Array.from(document.querySelectorAll('#plate-table-body tr')).indexOf(plateRow);
+                    
+                    subPlatesData[plateID].forEach((subPlate, subIndex) => {
+                        const subRow = document.createElement('tr');
+                        subRow.classList.add('sub-plate-row');
+                        subRow.setAttribute('data-subplate-id', subPlate.code);
+                        subRow.setAttribute('data-parent-id', plateID);
+                        
+                        if (lastSelectedSubPlateRow && 
+                            lastSelectedSubPlateRow.getAttribute('data-subplate-id') === subPlate.code &&
+                            lastSelectedSubPlateRow.getAttribute('data-parent-id') === plateID) {
+                            subRow.classList.add('selected'); // 选中的子板块添加selected类
+                        }
+                        
+                        const subCell1 = document.createElement('td');
+                        const subCell2 = document.createElement('td');
+                        const subCell3 = document.createElement('td');
+                        const subCell4 = document.createElement('td');
+                        
+                        const subNameContainer = document.createElement('div');
+                        subNameContainer.className = 'plate-name';
+                        subNameContainer.textContent = "●" + subPlate.name;
+                        subCell1.appendChild(subNameContainer);
+                        
+                        subCell2.innerText = subPlate.qd.toFixed(2);
+                        subCell2.style.textAlign = 'left';
+                        subCell2.style.paddingLeft = '10px';
+                        
+                        const changeContainer = document.createElement('div');
+                        changeContainer.style.display = 'inline-flex';
+                        changeContainer.style.alignItems = 'center';
+                        
+                        const changeArrow = document.createElement('span');
+                        changeArrow.className = 'change-arrow';
+                        
+                        const previousChange = subPlatePreviousChangeData[plateID] ? 
+                            subPlatePreviousChangeData[plateID][subPlate.code] : subPlate.change;
+                        
+                        if (subPlate.change > 0) {
+                            changeArrow.textContent = '↑';
+                            changeContainer.classList.add('change-red', 'change-bold');
+                        } else if (subPlate.change < 0) {
+                            changeArrow.textContent = '↓';
+                            changeContainer.classList.add('change-green', 'change-bold');
+                        }
+                        
+                        const changeValue = document.createElement('span');
+                        changeValue.textContent = subPlate.change.toFixed(2) + '%';
+                        
+                        changeContainer.appendChild(changeArrow);
+                        changeContainer.appendChild(changeValue);
+                        subCell3.appendChild(changeContainer);
+                        
+                        if (Math.abs(subPlate.change - previousChange) > 0.001) {
+                            subCell3.classList.add('updating');
+                            setTimeout(() => subCell3.classList.remove('updating'), 1000);
+                        }
+                        
+                        const limitUpCount = subPlateLimitUpData[plateID] && subPlateLimitUpData[plateID][subPlate.code] 
+                            ? subPlateLimitUpData[plateID][subPlate.code] 
+                            : 0;
+                        
+                        const limitUpContainer = document.createElement('div');
+                        limitUpContainer.className = 'limit-up-count';
+                        limitUpContainer.textContent = limitUpCount;
+                        
+                        if (subPlateStockCount[plateID] && subPlateStockCount[plateID][subPlate.code] > 0) {
+                            const totalCount = document.createElement('span');
+                            totalCount.style.color = '#aaa';
+                            totalCount.style.fontWeight = 'normal';
+                            totalCount.style.marginLeft = '3px';
+                            totalCount.textContent = `/${subPlateStockCount[plateID][subPlate.code]}`;
+                            limitUpContainer.appendChild(totalCount);
+                        }
+                        
+                        subCell4.appendChild(limitUpContainer);
+                        
+                        const previousLimitUp = subPlatePreviousLimitUpData[plateID] ? 
+                            subPlatePreviousLimitUpData[plateID][subPlate.code] : 0;
+                            
+                        if (limitUpCount !== previousLimitUp) {
+                            subCell4.classList.add('updating');
+                            setTimeout(() => subCell4.classList.remove('updating'), 1000);
+                        }
+                        
+                        subRow.appendChild(subCell1);
+                        subRow.appendChild(subCell2);
+                        subRow.appendChild(subCell3);
+                        subRow.appendChild(subCell4);
+                        
+                        subRow.onclick = (e) => {  
+                            e.stopPropagation();  
+                            if (lastSelectedSubPlateRow) {  
+                                lastSelectedSubPlateRow.classList.remove('selected');  
+                            }  
+                            subRow.classList.add('selected'); // 点击时添加selected类
+                            lastSelectedSubPlateRow = subRow;  
+                            loadedStockIds.clear();
+                            displayComponentStocks(subPlate.code, plateID);  
+                            setActivePlate(plateIndex, true, plateRow);  
+                            currentPlateName = subPlate.name;  
+                            currentPlateID = subPlate.code;
+                        };  
+                        
+                        if (rowIndex + subIndex + 1 < document.querySelectorAll('#plate-table-body tr').length) {
+                            document.querySelector('#plate-table-body').insertBefore(subRow, 
+                                document.querySelectorAll('#plate-table-body tr')[rowIndex + subIndex + 1]);
+                        } else {
+                            document.querySelector('#plate-table-body').appendChild(subRow);
+                        }
+                    });
+                }
+            }
+        }
+        
+        function updatePlateTable(currentRankings) {  
+            const plateTableBody = document.getElementById('plate-table-body');  
+            const isFirstLoad = plateTableBody.innerHTML.trim() === "";
+            
+            const expandedPlateIds = new Set();
+            document.querySelectorAll('#plate-table-body tr.expanded:not(.sub-plate-row)').forEach(row => {
+                const rowIndex = Array.from(document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)')).indexOf(row);
+                if (rowIndex >= 0 && rowIndex < platesList.length) {
+                    expandedPlateIds.add(platesList[rowIndex][0]);
+                }
+            });
+            
+            const existingRows = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)');
+            existingRows.forEach(row => row.remove());
+            
+            platesList.forEach((item, index) => {  
+                const row = plateTableBody.insertRow();
+                
+                const cell1 = row.insertCell(0);  
+                const cell2 = row.insertCell(1);  
+                const cell3 = row.insertCell(2);  
+                const cell4 = row.insertCell(3);  
+                const rankElement = document.createElement('span');  
+                rankElement.className = 'plate-rank';  
+                rankElement.textContent = index + 1;  
+                cell1.appendChild(rankElement);  
+                const nameContainer = document.createElement('div');  
+                nameContainer.className = 'plate-name';  
+                nameContainer.textContent = item[1];  
+                cell1.appendChild(nameContainer);  
+                cell2.innerText = item[2];  
+                cell3.innerText = parseFloat(item[3]).toFixed(2) + '%';
+                
+                if (parseFloat(item[3]) > 0) {
+                    cell3.classList.add('change-red');
+                } else if (parseFloat(item[3]) < 0) {
+                    cell3.classList.add('change-green');
+                }
+                
+                if (currentSort.type === 'plate' && currentSort.field === 'growth') {
+                    cell3.parentElement.querySelector('th.sortable[data-sort="growth"]')?.classList.add(`sort-${currentSort.direction}`);
+                }
+                
+                // 显示合并后的涨停数/总股数
+                const plateID = item[0];
+                const limitUpCount = parentPlateMergedLimitUpCount[plateID] || 0;
+                const totalCount = parentPlateMergedStockCount[plateID] || 0;
+                cell4.innerText = `${limitUpCount}/${totalCount}`;
+                
+                if (previousRankings && previousRankings[plateID] &&  
+                    currentRankings[plateID] < previousRankings[plateID]) {  
+                    row.classList.add('rank-up');  
+                    if (rankUpTimers[index]) clearTimeout(rankUpTimers[index]);  
+                    rankUpTimers[index] = setTimeout(() => {  
+                        row.classList.remove('rank-up');  
+                        delete rankUpTimers[index];  
+                    }, 20000);  
+                }
+                
+                if (subPlatesData[plateID] && subPlatesData[plateID].length > 0) {
+                    row.classList.add('has-sub-plate');
+                }
+                
+                if (expandedPlateIds.has(plateID)) {
+                    row.classList.add('expanded');
+                }
+                
+                row.onclick = (e) => {  
+                    if (row.classList.contains('sub-plate-row')) return;  
+                    if (row.classList.contains('has-sub-plate')) {  
+                        const plateID = item[0];  
+                        const isExpanded = row.classList.contains('expanded');  
+                        const subRows = plateTableBody.querySelectorAll('.sub-plate-row');  
+                        subRows.forEach(subRow => subRow.remove());  
+                        if (lastSelectedSubPlateRow) {  
+                            lastSelectedSubPlateRow.classList.remove('selected');  
+                        }  
+                        if (!isExpanded) {  
+                            row.classList.add('expanded');  
+                            updateSubPlatesDisplay(plateID, index);
+                        } else {  
+                            row.classList.remove('expanded');  
+                        }  
+                    }  
+                    loadedStockIds.clear();
+                    displayComponentStocks(item[0]);  
+                    setActivePlate(index, false, row);  
+                    currentPlateName = item[1];  
+                    currentPlateID = item[0];
+                };  
+                
+                if (!isFirstLoad && currentPlateID === item[0] && !lastSelectedSubPlateRow) {
+                    row.classList.add('selected');
+                    lastSelectedPlateRow = row;
+                } else if (isFirstLoad && index === 0) {
+                    row.classList.add('selected');
+                    lastSelectedPlateRow = row;
+                }
+            });  
+            
+            platesList.forEach((item, index) => {
+                if (expandedPlateIds.has(item[0])) {
+                    updateSubPlatesDisplay(item[0], index);
+                }
+            });
+            
+            hideLoading('left-loading');
+        }  
+        
+        function setActivePlate(index, isInitial = false, rowElement = null) {  
+            const plateRows = document.querySelectorAll('#plate-table-body tr:not(.sub-plate-row)');  
+            if (lastSelectedPlateRow) {  
+                lastSelectedPlateRow.classList.remove('selected');  
+            }  
+            let row;  
+            if (rowElement) {  
+                row = rowElement;  
+            } else if (index >= 0 && index < plateRows.length) {  
+                row = plateRows[index];  
+            }  
+            if (row && !isInitial && !row.classList.contains('sub-plate-row')) {  
+                row.classList.add('selected');  
+                lastSelectedPlateRow = row;  
+            }  
+        }  
+        
+        function isFilteredStock(stockCode, stockName, priceChange, marketCap) {
+            const filterKcb = document.getElementById('filter-kcb').checked;
+            const filterBzb = document.getElementById('filter-bzb').checked;
+            const filterSt = document.getElementById('filter-st').checked;
+            const filterMarketCap = document.getElementById('filter-market-cap').checked;
+            
+            const isKcb = stockCode.startsWith('68');
+            const isBzb = ['82', '83', '87', '88', '43', '92'].some(prefix => stockCode.startsWith(prefix));
+            const isSt = stockName && stockName.toLowerCase().includes('st');
+            const isDeclining = priceChange < 0;
+            const isLargeCap = marketCap > 200;
+            
+            return (filterKcb && isKcb) || 
+                   (filterBzb && isBzb) || 
+                   (filterSt && isSt) ||
+                   isDeclining ||
+                   (filterMarketCap && isLargeCap);
+        }
+        
+        async function displayComponentStocks(plateID, parentID = null) {  
+            showLoading('right-loading');
+            
+            try {  
+                let allStocks = [];
+                
+                // 判断是主板块还是子板块
+                if (parentID) {
+                    // 子板块 - 只显示该子板块的股票
+                    allStocks = subPlateStocksData[parentID] && subPlateStocksData[parentID][plateID] || [];
+                    
+                    // 包装股票数据
+                    allStocks = allStocks.map(stock => ({
+                        stockData: stock,
+                        subPlateIndex: 0
+                    }));
+                } else {
+                    // 主板块 - 合并所有子板块的股票并去重
+                    const uniqueStockCodes = new Set();
+                    
+                    if (subPlatesData[plateID]) {
+                        // 遍历每个子板块
+                        subPlatesData[plateID].forEach((subPlate, subIndex) => {
+                            const subPlateId = subPlate.code;
+                            const stocks = subPlateStocksData[plateID] && subPlateStocksData[plateID][subPlateId] || [];
+                            
+                            // 添加股票，确保去重
+                            stocks.forEach(stock => {
+                                const stockCode = stock[0];
+                                if (!uniqueStockCodes.has(stockCode)) {
+                                    uniqueStockCodes.add(stockCode);
+                                    allStocks.push({
+                                        stockData: stock,
+                                        subPlateIndex: subIndex
+                                    });
+                                }
+                            });
+                        });
+                    }
+                }
+                
+                // 应用过滤条件
+                const filteredStocks = allStocks.filter(item => {
+                    const stockData = item.stockData;
+                    const stockCode = stockData[0] || '';
+                    const stockName = stockData[1] || '';
+                    const priceChange = stockData[6] || 0;
+                    const marketCap = parseFloat(stockData[40] || 0);
+                    
+                    return !isFilteredStock(stockCode, stockName, priceChange, marketCap);
+                });
+                
+                // 保存所有股票数据用于搜索
+                allStocksData = filteredStocks;
+                
+                document.getElementById('stock-count').textContent = `(${filteredStocks.length})`;  
+                
+                currentStocksData = filteredStocks;
+                
+                if (currentSort.type === 'stock') {
+                    sortAndDisplayStocks();
+                } else {
+                    currentSort = { field: 'growth', direction: 'desc', type: 'stock' };
+                    document.querySelectorAll('#data-table th.sortable').forEach(header => {
+                        header.classList.remove('sort-asc', 'sort-desc');
+                    });
+                    document.querySelector('#data-table th.sortable[data-sort="growth"]').classList.add('sort-desc');
+                    sortAndDisplayStocks();
+                }
+                
+            } catch (error) {  
+                console.error("获取股票数据失败:", error);  
+                hideLoading('right-loading');
+            }  
+        }  
+        
+        // 导出功能 - TXT格式
+        document.getElementById('export-txt-button').onclick = function() {  
+            const rows = document.querySelectorAll('#data-table-body tr');  
+            let stockCodes = [];  
+            rows.forEach(row => {  
+                const stockCode = row.getAttribute('data-stock-code');  
+                if (stockCode) {
+                    stockCodes.push(stockCode);  
+                }
+            });  
+            
+            // 创建纯文本TXT文件
+            const blob = new Blob([stockCodes.join('\r\n')], { type: 'text/plain' });  
+            const url = URL.createObjectURL(blob);  
+            const a = document.createElement('a');  
+            
+            // 文件名使用当前板块名称（过滤特殊字符）
+            let fileName = currentPlateName.replace(/[\\/*?:"<>|]/g, '') + '.txt';
+            a.href = url;  
+            a.download = fileName;  
+            document.body.appendChild(a);  
+            a.click();  
+            document.body.removeChild(a);  
+            URL.revokeObjectURL(url);  
+            
+            // 显示导出提示
+            showExportTooltip();
+        };  
+        
+        // 显示导出提示弹窗
+        function showExportTooltip() {
+            const tooltip = document.getElementById('export-tooltip');
+            tooltip.style.top = '50%';
+            tooltip.style.left = '50%';
+            tooltip.style.transform = 'translate(-50%, -50%)';
+            tooltip.style.display = 'block';
+        }
+        
+        // 关闭提示弹窗
+        document.querySelector('.tooltip-close').addEventListener('click', function() {
+            document.getElementById('export-tooltip').style.display = 'none';
+        });
+        
+        // EBK导出功能
+        document.getElementById('export-ebk-button').onclick = function() {  
+            const rows = document.querySelectorAll('#data-table-body tr');  
+            let transformedStockCodes = [];  
+            rows.forEach(row => {  
+                const stockCode = row.getAttribute('data-stock-code');  
+                if (!stockCode) return;
+                
+                let transformedCode = stockCode;  
+                if (stockCode.startsWith('0') || stockCode.startsWith('3')) {  
+                    transformedCode = '0' + stockCode;  
+                } else if (stockCode.startsWith('6')) {  
+                    transformedCode = '1' + stockCode;  
+                } else if (stockCode.startsWith('4') || stockCode.startsWith('8')) {  
+                    transformedCode = '2' + stockCode;  
+                }  
+                transformedStockCodes.push(transformedCode);  
+            });  
+            const blob = new Blob([transformedStockCodes.join('\r\n')], { type: 'text/plain' });  
+            const url = URL.createObjectURL(blob);  
+            const a = document.createElement('a');  
+            a.href = url;  
+            a.download = currentPlateName + '.ebk';  
+            document.body.appendChild(a);  
+            a.click();  
+            document.body.removeChild(a);  
+            URL.revokeObjectURL(url);  
+        };  
+        
+        // 初始化
+        initSorting();
+        initSearch();
+        fetchPlates();  
+        startAutoRefresh();  
+    </script>
+</body>
+</html>

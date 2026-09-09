@@ -198,8 +198,11 @@
 
         <section class="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
             <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
-                <h3 class="text-sm font-bold">暗盘资金监控 TOP20</h3>
+                <h3 class="text-sm font-bold">暗盘资金监控 TOP30</h3>
                 <div class="flex flex-wrap items-center justify-end gap-2">
+                    <label for="darkCodeFilter" class="text-xs text-gray-500">代码过滤</label>
+                    <input id="darkCodeFilter" type="text" inputmode="numeric" maxlength="6" placeholder="全市场代码／前缀" oninput="scheduleDarkFilter()" class="w-44 text-xs px-2 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <button onclick="document.getElementById('darkCodeFilter').value = ''; loadDarkFund()" class="text-xs px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800">清空代码</button>
                     <label for="darkDate" class="text-xs text-gray-500">日期</label>
                     <input id="darkDate" type="date" onchange="loadDarkFund()" aria-label="资金日期，留空显示最近交易日" class="text-xs px-2 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
                     <button onclick="document.getElementById('darkDate').value = ''; loadDarkFund()" class="text-xs px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-800">最新</button>
@@ -237,7 +240,7 @@
             </div>
             <div id="darkLoading" class="hidden text-center text-xs text-gray-400 py-3">加载中…</div>
             <div id="darkStatus" role="status" class="text-xs text-gray-500 px-4 py-2"></div>
-            <div class="text-xs text-gray-400 px-4 py-2 border-t border-gray-200 dark:border-gray-800">金额自动换算万／亿；各类单显示净流入；历史日期的分单数据仅在交易日匹配时展示。数据来源：东方财富 darktrade、push2delay。</div>
+            <div class="text-xs text-gray-400 px-4 py-2 border-t border-gray-200 dark:border-gray-800">代码在全市场范围内筛选，展示匹配结果前30条。金额自动换算万／亿；各类单显示净流入；历史日期的分单数据仅在交易日匹配时展示。数据来源：东方财富 darktrade、push2delay。</div>
         </section>
 
         <!-- 板块情绪历史弹窗 -->
@@ -291,6 +294,7 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
 
     // darktrade 字段口径集中管理：主力=明盘+暗盘。
     const DARK_FIELDS = { main: '8', light: '7', dark: '6', activity: '11' };
+    let darkFilterTimer;
     let darkRequestId = 0;
     let darkDataCache = [];
 
@@ -318,7 +322,46 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
         } finally { clearTimeout(timer); }
     }
 
+    function scheduleDarkFilter() {
+        clearTimeout(darkFilterTimer);
+        ++darkRequestId; // 输入变化立即使旧请求失效。
+        darkFilterTimer = setTimeout(loadDarkFund, 400);
+    }
+
+    // 从服务端排序后的全市场分页数据中筛选，取匹配结果前30条。
+    async function dfRankedList(url, codeFilter, requestId, isDark) {
+        const query = new URL(url);
+        const pageKey = isDark ? 'StartPage' : 'pn';
+        query.searchParams.set(isDark ? 'NumPerPage' : 'pz', codeFilter ? '100' : '30');
+        let envelope, seen = 0, previousPage = '';
+        const matches = [];
+        for (let page = 1; page <= 200; page++) {
+            query.searchParams.set(pageKey, String(page));
+            const json = await dfFetch(query.toString());
+            if (requestId !== darkRequestId) throw new Error('查询已更新');
+            const raw = isDark ? json.data : json.data && json.data.diff;
+            if (Number(isDark ? json.errid : json.rc) !== 0 || !raw) throw new Error('榜单接口返回异常');
+            const rows = Object.values(raw);
+            if (!envelope) {
+                envelope = json;
+                if (isDark && json['1']) query.searchParams.set('date', String(json['1']));
+            } else if (isDark && String(json['1']) !== String(envelope['1'])) throw new Error('分页数据日期发生变化，请刷新');
+            const fingerprint = JSON.stringify(rows.map(row => isDark ? row['3'] + '.' + row['4'] : row.f13 + '.' + row.f12));
+            if (rows.length && fingerprint === previousPage) throw new Error('接口未返回下一页，无法完成全市场过滤');
+            previousPage = fingerprint;
+            seen += rows.length;
+            matches.push(...rows.filter(row => String(isDark ? row['4'] : row.f12).startsWith(codeFilter)));
+            const total = Number(isDark ? json['2'] : json.data.total);
+            if (!codeFilter || matches.length >= 30 || !rows.length || (Number.isFinite(total) && seen >= total)) {
+                if (isDark) return {...envelope, data:matches.slice(0, 30)};
+                return {...envelope, data:{...envelope.data, diff:matches.slice(0, 30)}};
+            }
+            if (page === 200) throw new Error('全市场过滤未完成，请缩小代码范围');
+        }
+    }
+
     async function loadDarkFund() {
+        clearTimeout(darkFilterTimer);
         const requestId = ++darkRequestId;
         const loading = document.getElementById('darkLoading');
         const status = document.getElementById('darkStatus');
@@ -328,11 +371,13 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
             const selectedDate = document.getElementById('darkDate').value.replace(/-/g, '');
             const sortField = document.getElementById('darkSortField').value;
             const direction = document.getElementById('darkSortDirection').value;
+            const codeFilter = document.getElementById('darkCodeFilter').value.trim();
+            if (codeFilter && !/^\d{1,6}$/.test(codeFilter)) throw new Error('请输入1至6位数字代码或前缀');
             if (sortField === 'superOrder') {
-                const quotes = await dfFetch('https://push2delay.eastmoney.com/api/qt/clist/get?' + new URLSearchParams({pn:'1', pz:'20', po:direction === '0' ? '0' : '1', np:'1', fltt:'2', invt:'2', fid:'f66', fs:'m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23', fields:'f12,f13,f14,f2,f3,f66,f72,f78,f84,f124'}));
+                const quotes = await dfRankedList('https://push2delay.eastmoney.com/api/qt/clist/get?' + new URLSearchParams({pn:'1', pz:'30', po:direction === '0' ? '0' : '1', np:'1', fltt:'2', invt:'2', fid:'f66', fs:'m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23', fields:'f12,f13,f14,f2,f3,f66,f72,f78,f84,f124'}), codeFilter, requestId, false);
                 if (requestId !== darkRequestId) return;
                 if (Number(quotes.rc) !== 0 || !quotes.data || !quotes.data.diff) throw new Error('超大单排序数据加载失败');
-                const list = Object.values(quotes.data.diff).slice(0, 20);
+                const list = Object.values(quotes.data.diff).slice(0, 30);
                 const dates = list.map(item => {
                     const stamp = dfNumber(item.f124);
                     return stamp ? new Date(stamp * 1000 + 8 * 3600000).toISOString().slice(0, 10).replace(/-/g, '') : null;
@@ -344,7 +389,7 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
                 renderDarkFund();
                 if (!list.length) { status.textContent = '暂无超大单数据'; return; }
                 status.textContent = '行情日期：' + tradeDate + '；正在匹配暗盘数据…';
-                // 暗盘接口按页查询，保留超大单全市场排名，不使用暗盘榜的前20条代替。
+                // 暗盘接口按页查询，保留超大单全市场排名，不使用暗盘榜的前30条代替。
                 const pending = new Map(darkDataCache.map(row => [row.market + '.' + row.code, row]));
                 try {
                     for (let page = 1; page <= 100 && pending.size; page++) {
@@ -367,14 +412,14 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
                 }
                 return;
             }
-            // 服务端按选择的指标排序后取 TOP20，避免只重排当前页。
-            const params = new URLSearchParams({version:'101', cver:'100', StartPage:'1', NumPerPage:'20', sortflag:DARK_FIELDS[sortField] || DARK_FIELDS.dark, desc:direction === '0' ? '0' : '1', market:'', datetype:''});
+            // 服务端按选择的指标排序后取 TOP30，避免只重排当前页。
+            const params = new URLSearchParams({version:'101', cver:'100', StartPage:'1', NumPerPage:'30', sortflag:DARK_FIELDS[sortField] || DARK_FIELDS.dark, desc:direction === '0' ? '0' : '1', market:'', datetype:''});
             if (selectedDate) params.set('date', selectedDate);
-            const data = await dfFetch('https://quotederivates.eastmoney.com/datacenter/darktrade?' + params);
+            const data = await dfRankedList('https://quotederivates.eastmoney.com/datacenter/darktrade?' + params, codeFilter, requestId, true);
             if (requestId !== darkRequestId) return;
             if (Number(data.errid) !== 0 || !Array.isArray(data.data)) throw new Error('暗盘接口返回异常');
             if (selectedDate && String(data['1']) !== selectedDate) throw new Error('该日无匹配数据，请选择交易日或点击“最新”');
-            darkDataCache = data.data.slice(0, 20).map(item => ({
+            darkDataCache = data.data.slice(0, 30).map(item => ({
                 market: String(item['3']), code: String(item['4']), name: item['16'],
                 change: dfNumber(item['14']) === null ? null : Number(item['14']) * 100,
                 price: dfNumber(item['13']) === null ? null : Number(item['13']) / 1000,
@@ -421,7 +466,10 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
     function renderDarkFund() {
         const tbody = document.getElementById('darkTbody');
         if (!darkDataCache.length) { tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-400 py-8">暂无数据</td></tr>'; return; }
-        tbody.innerHTML = darkDataCache.map(row => {
+        const codeFilter = document.getElementById('darkCodeFilter').value.trim();
+        const visibleRows = darkDataCache.filter(row => String(row.code).startsWith(codeFilter));
+        if (!visibleRows.length) { tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-400 py-8">没有匹配代码</td></tr>'; return; }
+        tbody.innerHTML = visibleRows.map(row => {
             const market = row.market === '1' ? 'sh' : row.market === '0' ? 'sz' : 'bj';
             const name = /^\d{6}$/.test(row.code) ? '<a target="_blank" rel="noopener noreferrer" class="hover:text-red-500" href="https://quote.eastmoney.com/' + market + row.code + '.html">' + dfEscape(row.name) + '</a>' : dfEscape(row.name);
             let html = '<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800"><td class="px-3 py-2.5 font-mono">' + dfEscape(row.code) + '</td><td class="px-3 py-2.5">' + name + '</td>';
@@ -435,7 +483,7 @@ const a0_0x53fd22=a0_0x1856,a0_0x248997=a0_0x3c0e;(function(_0x50077f,_0x5df9c9)
         }).join('');
     }
     document.addEventListener('DOMContentLoaded', loadDarkFund);
-    setInterval(() => { if (!document.hidden) loadDarkFund(); }, 60000);
+    setInterval(() => { if (!document.hidden && document.getElementById('darkLoading').classList.contains('hidden')) loadDarkFund(); }, 60000);
     </script>
 </body>
 </html>

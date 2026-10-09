@@ -1149,8 +1149,8 @@ globalThis.TractorAudio = (() => {
   let state = read('tractor-save-v4', null);
   if (state?.version !== 4) state = null;
   if (state) {
-    state.bidBase ??= state.declaration?.kind === '反主' ? 130 : 120;
     state.bidRound ??= 1;
+    state.bidBase = state.bidRound > 1 ? 130 : 120;
     if (state.forced && state.declaration?.cards.length === 1 && ['declare', 'bid'].includes(state.phase)) state.locked = false;
   }
   const previousRulesSave = !state && read('tractor-save-v3', null);
@@ -1231,7 +1231,7 @@ globalThis.TractorAudio = (() => {
     if (auctionReverse) cancelWork();
     state.trump = suit; state.declarer = player;
     state.locked = reverse || pair;
-    if (reverse) state.bidBase = 130;
+    if (reverse) state.bidBase = auctionReverse ? 130 : 120;
     state.declaration = { player, cards: option.cards.slice(), kind: forced ? '逼庄亮主' : option.upgrade ? '对 3 加亮' : reverse ? '反主' : pair ? '对 3 定主' : '亮主' };
     state.shown.push({ player, cards: option.cards.slice() });
     log(`${NAMES[player]}${forced ? '被逼庄，亮出' : option.upgrade ? '加亮对 3' : reverse ? '反主' : pair ? '对 3 定主' : '亮主'} ${R.SUITS[suit]}${pair ? '33' : '3'}${state.locked ? ' · 主花色锁定' : ''}`);
@@ -1560,9 +1560,9 @@ globalThis.TractorAudio = (() => {
       <li>两副牌 108 张，每人 33 张，底牌 9 张。每局重新洗牌。庄家拿底后埋 9 张。庄家首攻，之后每轮赢家收分并领出下一轮。</li>
       <li>亮 3 定主，对 3 可反其他玩家的单 3；不能自己用异花色对 3 改主，只反一次。接牌期间可直接亮对 3，立即锁主。</li>
       <li>接牌阶段自己亮过单 3 后，又接到同花色第二张 3，可以<b>加亮同花色对 3 并锁主</b>。主花色不变，仍按普通 120 分起叫，不触发反主重置；竞价阶段不能自行加亮。</li>
-      <li>手持异花色对 3 可延迟到自己的竞价回合反其他玩家的主：<b>旧报价作废，由反主者以 130 分重新竞价，全部玩家恢复报价资格，主花色锁定。</b>接牌阶段反主，竞价起始分也为 130。</li>
+      <li>接牌阶段用异花色对 3 反其他玩家的主，主花色锁定，接完牌后仍从 <b>120 分</b>起叫。也可延迟到自己的竞价回合反主：<b>旧报价作废，由反主者以 130 分重新竞价，全部玩家恢复报价资格，主花色锁定。</b></li>
       <li>每局无人亮主时，从首位接牌者依次逼庄，有 3 必须亮主并保底 120 分；其他人仍可加价抢庄。逼庄单 3 仍可在竞价回合被对 3 反主。三人都没有 3 时重发。</li>
-      <li>普通竞价最低 120，反主后最低 130，最高 200，每次至少加 10，且为 10 的倍数。弃叫者退出当前这一轮竞价，不能重新加价；反主重开竞价时恢复资格。仅剩一人或叫到 200 时结束。</li>
+      <li>普通竞价及接牌阶段反主后最低 120，仅竞价阶段反主以 130 重开，最高 200，每次至少加 10，且为 10 的倍数。弃叫者退出当前这一轮竞价，不能重新加价；反主重开竞价时恢复资格。仅剩一人或叫到 200 时结束。</li>
       <li>大王 ＞ 小王 ＞ 主花色3 ＞ 非主花色3 ＞ 主花色2 ＞ 非主花色2 ＞ 主花色A至4。单牌、对子均按此排序。<b>所有 2、3 都按硬主补牌。</b></li>
       <li>对子限同花同点。两对及以上连续对子组成拖拉机，按上述新牌序连接。同级牌先出者大。</li>
       <li>跟牌张数与首家一致。对子、拖拉机先跟同花色对子，不强制跟成拖拉机；花色不足补主，主不足才垫其他副牌。</li>

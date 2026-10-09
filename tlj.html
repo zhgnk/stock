@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#145640">
+<title>三人拖拉机 · 单机牌桌</title>
+<style>:root{font-family:Inter,"Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#192924;background:#e9eeeb;font-synthesis:none;--green:#166548;--felt:#145640;--muted:#738079;--line:#dce4de;--red:#c74347;--gold:#edc56c;letter-spacing:0}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.42}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #e3a646;outline-offset:3px}button{touch-action:manipulation}button svg{width:18px;height:18px;flex-shrink:0}button{display:inline-flex;align-items:center;justify-content:center;gap:7px}svg{vertical-align:middle}h1,h2,h3,p{margin:0}button,select,input{letter-spacing:0}.icon-btn{height:36px;width:36px;border:1px solid var(--line);border-radius:6px;background:#fff;color:#43554b;padding:0}.icon-btn:hover{background:#f0f5f1}.icon-btn.active{background:#e1f0e7;border-color:#9bbda8;color:var(--green)}.app-header{height:70px;padding:0 30px;display:flex;justify-content:space-between;align-items:center;background:#fff;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:12px}.brand-mark{width:35px;height:39px;border:1px solid #abc7b7;border-radius:5px;color:var(--green);font-family:Georgia,serif;font-size:30px;display:grid;place-items:center;transform:rotate(-6deg)}h1{font-size:21px;font-weight:750}.brand-sub{font-size:11px;color:var(--muted);margin-top:3px}.header-actions{display:flex;align-items:center;gap:8px}.local-badge{display:flex;align-items:center;gap:6px;color:#6c7b72;font-size:12px;margin-right:12px}.local-badge:before{content:"";height:6px;width:6px;background:#4e9472;border-radius:50%}.layout{display:grid;grid-template-columns:minmax(0,1fr) 292px;max-width:1700px;min-height:calc(100vh - 70px);margin:0 auto}.main{min-width:0;background:#f8faf8}.score-strip{display:flex;align-items:center;gap:25px;padding:15px 26px;background:#f8faf8;height:78px;border-bottom:1px solid #194f3d}.metric{min-width:65px}.metric small{display:block;font-size:10px;color:#7a8880;margin-bottom:5px}.metric strong{font-size:19px;line-height:22px;font-weight:700}.metric small+span{font-size:13px;color:#425b4d}.metric .red{color:var(--red)}.score-strip .divider{width:1px;height:31px;background:var(--line)}.score-strip .round-counter{margin-left:auto;text-align:right;font-size:11px;color:#8b958f}.round-counter strong{display:block;font-size:18px;color:#56695d;margin-bottom:3px}.goal-inline{font-size:12px;font-weight:400;color:#829087;margin-left:5px}.table{height:372px;position:relative;isolation:isolate;overflow:hidden;background:var(--felt);color:#eef6ef;border-top:1px solid #35755b;border-bottom:5px solid #0b3d2d}.table:before{content:"";position:absolute;inset:0;opacity:.14;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M0 0h1v1H0zm3 3h1v1H3z' fill='%23b6d4ba'/%3E%3C/svg%3E");z-index:-1}.table:after{content:"";position:absolute;inset:20px;border:1px solid #ffffff0c;border-radius:100px;pointer-events:none;z-index:-1}.seat{position:absolute;top:26px;display:flex;align-items:center;gap:10px;max-width:220px}.seat-left{left:30px}.seat-right{right:30px;flex-direction:row-reverse;text-align:right}.avatar{width:43px;height:43px;border-radius:7px;background:#ecf1e8;color:#1f5c44;display:grid;place-items:center;border:2px solid #fff2;position:relative}.avatar svg{width:25px;height:25px}.seat.current .avatar{box-shadow:0 0 0 3px #edc56c;color:#866625}.seat-name{font-size:14px;font-weight:600;line-height:22px}.seat-meta{font-size:11px;color:#a9c7b6;margin-top:2px;white-space:nowrap}.role{font-size:10px;padding:2px 5px;margin-left:5px;border-radius:3px;background:#eac777;color:#4e431f;font-weight:650}.role.farmer{color:#c1dfcd;background:#ffffff13}.role.failed{color:#ffd6d3;background:#9f4541}.mini-back-stack{position:absolute;top:87px;display:flex;gap:3px;opacity:.8}.mini-back-stack.left{left:33px}.mini-back-stack.right{right:33px}.mini-back{width:16px;height:24px;border:1px solid #ccdec1;border-radius:2px;background:#1a3d33;background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,#b0c9ae30 3px,#b0c9ae30 4px)}.center-stage{position:absolute;left:32%;right:32%;top:31px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:9px;min-height:115px}.center-caption{font-size:11px;color:#8fbaa3}.center-heading{font-size:17px;font-weight:550;color:#e2eddf}.center-caption strong{color:var(--gold);font-weight:600}.trump-watermark{font-family:Georgia,serif;font-size:52px;line-height:58px;color:#ffffff12}.deck-stack{position:relative;width:57px;height:80px;border:2px solid #d6dfca;border-radius:5px;background:#1e3e32;box-shadow:4px 4px 0 #bbcfb0,7px 7px 0 #234d3b;display:grid;place-items:center;color:#c9d7b8;font-size:32px}.deck-stack:after{content:"";position:absolute;inset:5px;border:1px solid #c5d2b378;border-radius:2px}.deal-count{font-size:11px;color:#bdd2c2}.pile{position:absolute;width:28%;min-height:105px;text-align:center;top:137px}.pile-left{left:26px}.pile-right{right:26px}.pile-self{left:31%;width:38%;top:236px}.pile-label{height:22px;font-size:11px;color:#b1d0bd;margin-bottom:7px}.pile-label.winner{color:var(--gold)}.played-cards{height:76px;position:relative;margin:auto;max-width:100%;display:flex;justify-content:center}.played-cards .card{width:52px;height:74px;flex-shrink:0;margin-left:-22px;pointer-events:none;border-radius:4px;box-shadow:0 2px 4px #001f2638}.played-cards .card:first-child{margin-left:0}.played-cards .card .rank{font-size:17px}.played-cards .card .suit{font-size:15px}.played-cards .card .pip{font-size:28px}.played-cards .card .lower{display:none}.played-cards.many .card{margin-left:calc(-52px + var(--pile-step,17px))}.played-cards.many .card:first-child{margin-left:0}.trick-pot{position:absolute;left:42%;right:42%;top:179px;text-align:center;color:#cde0d0;font-size:12px}.trick-pot strong{font-size:25px;display:block;color:#f2dc99;font-weight:550;margin-bottom:3px}.turn-note{position:absolute;bottom:17px;left:25px;color:#aacbb5;font-size:11px}.table-status{position:absolute;bottom:16px;right:24px;display:flex;align-items:center;gap:7px;color:#a9c9b3;font-size:11px}.table-status svg{width:13px;height:13px}.decision-bar{padding:14px 23px;min-height:75px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;background:white}.decision-copy{min-width:145px}.decision-copy strong{display:block;font-size:15px;font-weight:650}.decision-copy small{display:block;font-size:11px;color:#809086;margin-top:5px;min-height:15px}.actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.btn{height:37px;padding:0 14px;border:1px solid var(--line);border-radius:5px;background:#fff;color:#43584b;font-size:12px;white-space:nowrap}.btn:hover{background:#f2f6f3}.btn.primary{background:var(--green);border-color:var(--green);color:#fff}.btn.primary:hover{background:#105338}.btn.gold{background:#f2d78d;border-color:#e4c36c;color:#514724}.btn.danger{color:var(--red);border-color:#e7babc}.declare-btn{height:35px;min-width:46px;padding:0 8px;background:#fff;border:1px solid #bfd0c4;border-radius:5px;font-size:15px;font-weight:600}.declare-btn.red{color:var(--red)}.declare-btn small{font-size:10px;color:#697970}.bid-input{width:77px;height:37px;border:1px solid var(--line);border-radius:5px;padding:0 8px}.hand-section{padding:12px 23px 14px;min-height:255px;background:#f8faf8}.hand-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:8px;height:25px}.hand-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650}.hand-title .role.farmer{background:#e7eee8;color:#607467}.hand-count{font-size:11px;color:#7d8c82;font-weight:400}.hand-tools{display:flex;align-items:center;gap:7px}.hand-tools .icon-btn{height:28px;width:29px;font-size:12px}.selected-count{font-size:11px;color:#738379;margin-right:4px}.hand-rows{display:flex;flex-direction:column;gap:17px;align-items:center;min-height:178px}.hand-row{position:relative;height:94px;flex-shrink:0;max-width:100%;width:var(--row-width);display:flex}.hand-row+.hand-row{margin-top:0}.card{position:relative;display:block;background:#fffefb;color:#233a32;width:65px;height:94px;border:1px solid #c4cfc6;border-radius:5px;padding:0;box-shadow:0 2px 3px #253d2710;flex-shrink:0;text-align:left;user-select:none;transition:transform .12s,border-color .12s,box-shadow .12s}.card.red{color:#bc3944}.hand-row .card{position:absolute;left:calc(var(--i) * var(--step));top:0;z-index:var(--i)}.card .corner{position:absolute;top:5px;left:6px;display:flex;flex-direction:column;align-items:center;gap:0;line-height:1}.card .rank{font-family:Georgia,"Times New Roman",serif;font-size:21px;line-height:23px;font-weight:bold}.card .suit{font-family:"Segoe UI Symbol",serif;font-size:19px;line-height:19px}.card .pip{position:absolute;left:36%;top:40%;font-family:"Segoe UI Symbol",serif;font-size:35px;line-height:1;opacity:.86}.card .lower{position:absolute;bottom:5px;right:5px;transform:rotate(180deg);font-family:Georgia,serif;font-size:15px;font-weight:bold}.card.joker .rank{font-family:inherit;font-size:11px;line-height:15px;writing-mode:vertical-rl;letter-spacing:0}.card.joker .pip{left:37%;top:39%}.card.joker .pip svg{width:28px;height:28px}.card.trump:after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:#ba9851;border-radius:0 0 4px 4px}.hand-row .card:hover{transform:translateY(-6px);box-shadow:0 6px 10px #1a392223}.hand-row .card.selected{transform:translateY(-13px);border:2px solid #c49e50;background:#fff8df;box-shadow:0 4px 6px #1a392229}.hand-row .card.selected .corner{left:5px;top:4px}.card.selected:before{content:"";position:absolute;top:-5px;right:3px;width:7px;height:7px;background:#ab812d;border-radius:50%}.hand-empty{width:100%;height:152px;display:grid;place-items:center;font-size:13px;color:#9aa89e}.hand-footer{display:flex;justify-content:space-between;font-size:10px;color:#8c998f;margin-top:10px;gap:10px}.card.new{animation:cardIn .25s ease-out}@keyframes cardIn{from{transform:translateY(-15px);opacity:.4}to{transform:translateY(0);opacity:1}}.sidebar{border-left:1px solid var(--line);background:#fff;padding:24px 22px;min-width:0}.side-title{font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.side-title span{font-size:10px;font-weight:400;color:#7b8a80}.score-goal{display:flex;align-items:baseline;gap:7px}.score-goal strong{font-size:37px;line-height:45px;font-weight:600}.score-goal span{font-size:12px;color:#87948a}.progress-track{height:5px;background:#edf1ed;border-radius:2px;margin:13px 0 8px;overflow:hidden}.progress-fill{height:100%;background:#298465;transition:width .3s}.progress-meta{display:flex;justify-content:space-between;font-size:11px;color:#89968c}.side-separator{height:1px;background:var(--line);margin:23px 0}.score-rows{display:grid;gap:12px;margin-top:18px}.score-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#53675a}.score-row .mini-dot{width:7px;height:7px;display:inline-block;margin-right:7px;border-radius:50%;background:#267355}.score-row .mini-dot.gold{background:#c9a554}.side-log{display:flex;flex-direction:column;gap:14px;max-height:290px;overflow-y:auto;scrollbar-width:thin;padding-right:3px}.log-item{font-size:11px;line-height:1.65;color:#6a7e6e;position:relative;padding-left:12px}.log-item:before{content:"";position:absolute;left:0;top:6px;width:4px;height:4px;border-radius:50%;background:#b6c6b9}.log-item.latest{color:#1a6748}.side-bottom{margin-top:22px;display:flex;gap:7px}.side-bottom .btn{flex:1;padding:0 6px;font-size:11px}.summary-stat{display:flex;justify-content:space-between;font-size:11px;color:#87978b;margin-top:16px}.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);max-width:min(90vw,620px);border-radius:6px;padding:12px 18px;background:#25392f;color:#fff;font-size:13px;line-height:1.6;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:50;box-shadow:0 4px 16px #15241933}.toast.visible{opacity:1;transform:translate(-50%,0)}dialog{padding:0;border:1px solid #d1ddd2;border-radius:8px;width:min(620px,calc(100vw - 30px));max-height:calc(100dvh - 50px);color:#233b2d;background:#fff;box-shadow:0 20px 80px #0003}dialog::backdrop{background:#071c13a0}.modal-header{padding:19px 23px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}.modal-header h2{font-size:18px}.modal-body{padding:22px 24px;overflow:auto;max-height:calc(100dvh - 200px);font-size:13px;line-height:1.85}.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:15px 23px;border-top:1px solid var(--line)}.setting-row{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:12px 0;border-bottom:1px solid #eff2ed}.setting-row label{font-size:13px}.setting-row select{max-width:220px;border:1px solid var(--line);padding:7px;border-radius:4px;font-size:12px;background:#fff}.setting-row input[type=checkbox]{accent-color:var(--green);width:18px;height:18px}.setting-row input[type=range]{accent-color:var(--green);width:145px}.rules-list{padding-left:20px;margin:0}.rules-list li{margin:0 0 12px}.rules-list b{color:#155f41}.result-heading{text-align:center;padding:8px 0 20px}.result-heading .result-icon{color:#bd9b4b;margin-bottom:9px}.result-heading svg{width:42px;height:42px}.result-heading h3{font-size:25px;margin-bottom:6px}.result-heading p{font-size:12px;color:#7a8a7e}.result-players{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:4px 0 20px}.result-player{display:flex;justify-content:space-between;padding:10px 2px;font-size:13px}.result-player .win{color:#17734d;font-weight:650}.result-player .loss{color:#af5353}.bottom-caption{color:#829083;font-size:11px;text-align:center;margin:12px 0}.bottom-cards{display:flex;justify-content:center;flex-wrap:wrap;gap:4px}.bottom-cards .card{width:44px;height:66px;pointer-events:none}.bottom-cards .card .rank{font-size:16px}.bottom-cards .card .suit{font-size:15px}.bottom-cards .card .pip{font-size:23px}.bottom-cards .card .lower{display:none}.history-entry{padding:12px 0;border-bottom:1px solid var(--line);font-size:12px}.history-entry strong{display:block;margin-bottom:6px}.history-entry p{color:#617464;line-height:1.9}.history-entry .red{color:var(--red)}.thinking{display:inline-flex;gap:3px;align-items:center}.thinking i{width:3px;height:3px;background:currentColor;border-radius:50%;animation:pulse 1.1s infinite}.thinking i:nth-child(2){animation-delay:.15s}.thinking i:nth-child(3){animation-delay:.3s}@keyframes pulse{50%{opacity:.3}}.mobile-log{display:none}.status-live{min-height:18px}.small-note{font-size:11px;color:#879188;margin-top:14px}.danger-line{color:#b24e4e}.game-version{font-size:10px;color:#a1aea3;text-align:center;margin-top:21px}.resume-line{font-size:11px;color:#769180}.modal-body .chip{display:inline-block;padding:1px 5px;background:#edf3ee;border-radius:3px;color:#2b6b4c;font-size:11px}
+@media(min-width:1450px){.table{height:420px}.pile{top:160px}.pile-self{top:280px}.trick-pot{top:202px}.hand-section{padding-top:17px;padding-bottom:24px}.hand-rows{gap:20px}}
+@media(max-width:1100px){.layout{grid-template-columns:minmax(0,1fr) 250px}.sidebar{padding:22px 16px}.score-strip{gap:16px;padding:13px 19px}.app-header{padding:0 22px}.decision-bar{padding:12px 17px}.hand-section{padding:12px 17px}.actions{gap:5px}.btn{padding:0 11px}.seat-left{left:22px}.seat-right{right:22px}.pile-left{left:18px}.pile-right{right:18px}}
+@media(max-width:850px){.layout{display:block}.sidebar{display:none}.mobile-log{display:inline-flex}.app-header{height:59px;padding:0 16px}.brand-mark{width:28px;height:33px;font-size:25px}.brand{gap:9px}h1{font-size:18px}.brand-sub{font-size:9px}.local-badge{display:none}.header-actions{gap:5px}.icon-btn{width:32px;height:32px}.score-strip{height:70px;padding:11px 17px;gap:21px}.metric strong{font-size:18px}.metric small{font-size:10px}.metric{min-width:48px}.score-strip .divider{display:none}.table{height:335px}.seat{top:22px}.seat-left{left:18px}.seat-right{right:18px}.avatar{width:35px;height:35px}.avatar svg{width:21px;height:21px}.seat-name{font-size:12px}.seat-meta{font-size:10px}.mini-back-stack{top:75px}.mini-back-stack.left{left:21px}.mini-back-stack.right{right:21px}.center-stage{left:34%;right:34%;top:24px}.center-heading{font-size:13px}.center-caption{font-size:10px}.pile{top:119px;width:31%}.pile-left{left:13px}.pile-right{right:13px}.pile-self{top:224px;left:28%;width:44%}.played-cards .card{width:44px;height:65px;margin-left:-23px}.played-cards.many .card{margin-left:calc(-44px + var(--pile-step,13px))}.played-cards .card .rank{font-size:16px;line-height:18px}.played-cards .card .corner{left:4px;top:4px}.played-cards .card .suit{font-size:14px;line-height:16px}.played-cards .card .pip{font-size:24px}.trick-pot{top:140px;left:40%;right:40%}.trick-pot strong{font-size:22px}.decision-bar{min-height:73px}.hand-section{min-height:247px}.hand-footer{margin-top:12px}.turn-note{bottom:12px;font-size:10px;left:17px}.table-status{bottom:12px;right:17px;font-size:10px}.pile-label{font-size:10px}.table:after{inset:14px}.score-strip .round-counter{font-size:9px}.round-counter strong{font-size:16px}.decision-copy strong{font-size:14px}.decision-copy small{font-size:10px}}
+@media(max-width:520px){.app-header{padding:0 12px}.brand-sub{display:none}.header-actions{gap:4px}.header-actions .icon-btn{width:30px;height:30px}.header-actions .icon-btn svg{width:16px;height:16px}.brand-mark{display:none}h1{font-size:17px}.score-strip{padding:11px 14px;gap:19px}.metric strong{font-size:17px}.metric small+span{font-size:11px}.goal-inline{font-size:10px;margin-left:3px}.round-counter{min-width:35px}.table{height:291px}.seat{gap:6px;max-width:132px}.seat-left{left:14px}.seat-right{right:14px}.avatar{height:31px;width:31px}.seat-name{font-size:11px}.role{font-size:9px;padding:1px 3px;margin-left:3px}.seat-meta{font-size:9px}.mini-back-stack{top:66px}.mini-back{height:19px;width:12px}.mini-back-stack.left{left:16px}.mini-back-stack.right{right:16px}.center-stage{top:27px;gap:6px;left:36%;right:36%}.center-heading{font-size:11px}.center-caption{font-size:9px}.deck-stack{width:40px;height:56px;font-size:25px}.deal-count{font-size:10px}.trump-watermark{font-size:41px;line-height:42px}.pile{top:110px;width:35%;min-height:75px}.pile-left{left:8px}.pile-right{right:8px}.pile-self{left:25%;width:50%;top:190px}.pile-label{font-size:9px;margin-bottom:2px;height:17px}.played-cards{height:57px}.played-cards .card{width:37px;height:56px;margin-left:-22px}.played-cards.many .card{margin-left:calc(-37px + var(--pile-step,11px))}.played-cards .card .rank{font-size:14px;line-height:15px}.played-cards .card .suit{font-size:13px;line-height:14px}.played-cards .card .pip{font-size:21px}.played-cards .card .corner{left:3px;top:3px}.trick-pot{top:115px;left:42%;right:42%;font-size:9px}.trick-pot strong{font-size:19px}.decision-bar{padding:11px 12px;flex-wrap:wrap;gap:9px;min-height:101px}.decision-copy{min-width:0;flex:1}.decision-copy strong{font-size:13px}.actions{gap:5px;justify-content:flex-end;max-width:100%}.actions.wide{flex-basis:100%}.btn{height:34px;font-size:11px;padding:0 10px}.btn svg{width:15px;height:15px}.declare-btn{height:32px;min-width:39px;font-size:14px}.hand-section{padding:11px 12px 15px;min-height:223px}.hand-title{font-size:12px;gap:5px}.hand-count{font-size:10px}.hand-header{margin-bottom:18px}.selected-count{font-size:10px}.hand-row{height:73px}.hand-row .card{width:49px;height:73px}.hand-row .card .rank{font-size:17px;line-height:19px}.hand-row .card .suit{font-size:15px;line-height:16px}.hand-row .card .corner{left:4px;top:4px}.hand-row .card .pip{font-size:27px}.hand-row .card .lower{font-size:12px;right:4px}.hand-row .card.joker .rank{font-size:10px;line-height:12px}.hand-row .card.joker .pip svg{width:22px;height:22px}.hand-row .card.selected .corner{left:3px;top:3px}.hand-rows{gap:17px;min-height:145px}.hand-footer{font-size:9px;margin-top:11px}.turn-note{font-size:9px}.table-status{font-size:9px}.modal-header{padding:14px 16px}.modal-body{padding:17px 18px}.modal-footer{padding:12px 16px}.modal-header h2{font-size:16px}.setting-row{gap:12px}.setting-row label{font-size:12px}.setting-row select{max-width:175px;font-size:11px}.setting-row input[type=range]{width:118px}.bottom-cards .card{width:30px;height:49px}.bottom-cards .card .corner{left:3px;top:3px}.bottom-cards .card .rank{font-size:13px;line-height:15px}.bottom-cards .card .suit{font-size:12px;line-height:13px}.bottom-cards .card .pip{display:none}.bottom-cards{gap:2px}.toast{bottom:18px;font-size:12px}.hand-row .card:hover{transform:none}.hand-row .card.selected:hover{transform:translateY(-13px)}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+.seat-declaration{position:absolute;display:flex;flex-direction:column;gap:6px;align-items:center;width:max-content;text-align:center}.seat .seat-declaration{top:calc(100% + 12px);left:0}.seat-right .seat-declaration{left:auto;right:0}.declaration-0{bottom:39px;left:50%;transform:translateX(-50%)}.seat-declaration .center-caption{white-space:nowrap}.declared-trump{display:flex;justify-content:center;gap:7px;min-height:74px}.declared-trump .card{width:52px;height:74px;pointer-events:none}.declared-trump .card .rank{font-size:19px;line-height:21px}.declared-trump .card .suit{font-size:17px;line-height:18px}.declared-trump .card .pip{font-size:28px}.declared-trump .card .lower{display:none}
+@media(max-width:520px){.declared-trump{gap:5px;min-height:58px}.declared-trump .card{width:39px;height:58px}.declared-trump .card .corner{left:4px;top:4px}.declared-trump .card .rank{font-size:16px;line-height:17px}.declared-trump .card .suit{font-size:14px;line-height:15px}.declared-trump .card .pip{font-size:22px}}
+</style>
+<!-- Lucide icon license
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+- --
+
+The following Lucide icons are derived from the Feather project:
+
+airplay, alert-circle, alert-octagon, alert-triangle, aperture, arrow-down-circle, arrow-down-left, arrow-down-right, arrow-down, arrow-left-circle, arrow-left, arrow-right-circle, arrow-right, arrow-up-circle, arrow-up-left, arrow-up-right, arrow-up, at-sign, calendar, cast, check, chevron-down, chevron-left, chevron-right, chevron-up, chevrons-down, chevrons-left, chevrons-right, chevrons-up, circle, clipboard, clock, code, columns, command, compass, corner-down-left, corner-down-right, corner-left-down, corner-left-up, corner-right-down, corner-right-up, corner-up-left, corner-up-right, crosshair, database, divide-circle, divide-square, dollar-sign, download, external-link, feather, frown, hash, headphones, help-circle, info, italic, key, layout, life-buoy, link-2, link, loader, lock, log-in, log-out, maximize, meh, minimize, minimize-2, minus-circle, minus-square, minus, monitor, moon, more-horizontal, more-vertical, move, music, navigation-2, navigation, octagon, pause-circle, percent, plus-circle, plus-square, plus, power, radio, rss, search, server, share, shopping-bag, sidebar, smartphone, smile, square, table-2, tablet, target, terminal, trash-2, trash, triangle, tv, type, upload, x-circle, x-octagon, x-square, x, zoom-in, zoom-out
+
+The MIT License (MIT) (for the icons listed above)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-->
+</head>
+<body>
+<header class="app-header">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">♠</span><div><h1>三人拖拉机</h1><div class="brand-sub">108 张 · 9 张底牌</div></div></div>
+  <nav class="header-actions" aria-label="牌桌工具"><span class="local-badge">单机牌桌</span><button class="icon-btn" data-action="auto" id="auto-btn" title="托管" aria-label="托管"></button><button class="icon-btn mobile-log" data-action="history" title="牌局记录" aria-label="牌局记录" id="history-icon"></button><button class="icon-btn" data-action="rules" title="游戏规则" aria-label="游戏规则" id="rules-icon"></button><button class="icon-btn" data-action="settings" title="牌桌设置" aria-label="牌桌设置" id="settings-icon"></button><button class="icon-btn" data-action="restart" title="重新开局" aria-label="重新开局" id="restart-icon"></button></nav>
+</header>
+<div class="layout">
+  <main class="main"><section class="score-strip" id="score-strip" aria-label="牌局信息"></section><section class="table" id="table" aria-label="牌桌"></section><section class="decision-bar" id="decision-bar" aria-label="当前操作"></section><section class="hand-section"><div class="hand-header" id="hand-header"></div><div class="hand-rows" id="hand" aria-label="你的手牌"></div><div class="hand-footer" id="hand-footer"></div></section></main>
+  <aside class="sidebar" id="sidebar" aria-label="比分与记录"></aside>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog id="modal"><div class="modal-header"><h2 id="modal-title"></h2><button class="icon-btn" data-action="close-modal" aria-label="关闭" title="关闭" id="close-icon"></button></div><div class="modal-body" id="modal-body"></div><div class="modal-footer" id="modal-footer"></div></dialog>
+<script>window.GAME_ICONS={"Settings":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>","RotateCcw":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/></svg>","History":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l4 2\"/></svg>","BookOpen":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 7v14\"/><path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/></svg>","Bot":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 8V4H8\"/><rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\"/><path d=\"M2 14h2\"/><path d=\"M20 14h2\"/><path d=\"M15 13v2\"/><path d=\"M9 13v2\"/></svg>","BrainCircuit":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z\"/><path d=\"M9 13a4.5 4.5 0 0 0 3-4\"/><path d=\"M6.003 5.125A3 3 0 0 0 6.401 6.5\"/><path d=\"M3.477 10.896a4 4 0 0 1 .585-.396\"/><path d=\"M6 18a4 4 0 0 1-1.967-.516\"/><path d=\"M12 13h4\"/><path d=\"M12 18h6a2 2 0 0 1 2 2v1\"/><path d=\"M12 8h8\"/><path d=\"M16 8V5a2 2 0 0 1 2-2\"/><circle cx=\"16\" cy=\"13\" r=\".5\"/><circle cx=\"18\" cy=\"3\" r=\".5\"/><circle cx=\"20\" cy=\"21\" r=\".5\"/><circle cx=\"20\" cy=\"8\" r=\".5\"/></svg>","CircleDot":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/></svg>","Play":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"/></svg>","Pause":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/><rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\"/></svg>","ChevronsRight":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 17 5-5-5-5\"/><path d=\"m13 17 5-5-5-5\"/></svg>","Minus":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/></svg>","Gavel":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m14 13-8.381 8.38a1 1 0 0 1-3.001-3l8.384-8.381\"/><path d=\"m16 16 6-6\"/><path d=\"m21.5 10.5-8-8\"/><path d=\"m8 8 6-6\"/><path d=\"m8.5 7.5 8 8\"/></svg>","Lightbulb":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"/><path d=\"M9 18h6\"/><path d=\"M10 22h4\"/></svg>","ArrowDownToLine":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>","ArrowUpRight":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 7h10v10\"/><path d=\"M7 17 17 7\"/></svg>","ListChecks":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M13 5h8\"/><path d=\"M13 12h8\"/><path d=\"M13 19h8\"/><path d=\"m3 17 2 2 4-4\"/><path d=\"m3 7 2 2 4-4\"/></svg>","ArrowRight":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg>","UserRound":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"8\" r=\"5\"/><path d=\"M20 21a8 8 0 0 0-16 0\"/></svg>","Crown":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z\"/><path d=\"M5 21h14\"/></svg>","Layers":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z\"/><path d=\"M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12\"/><path d=\"M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17\"/></svg>","Trophy":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978\"/><path d=\"M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978\"/><path d=\"M18 9h1.5a1 1 0 0 0 0-5H18\"/><path d=\"M4 22h16\"/><path d=\"M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z\"/><path d=\"M6 9H4.5a1 1 0 0 1 0-5H6\"/></svg>","Flag":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528\"/></svg>","X":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg>"};</script>
+<script>'use strict';
+const Rules = (() => {
+  const SUITS = ['♠', '♥', '♣', '♦'];
+  const SUIT_NAMES = ['黑桃', '红桃', '梅花', '方块'];
+  const deck = () => Array.from({ length: 108 }, (_, id) => id);
+  const face = id => id % 54;
+  const suit = id => face(id) >= 52 ? -1 : Math.floor(face(id) / 13);
+  const rank = id => face(id) >= 52 ? face(id) - 37 : face(id) % 13 + 2;
+  const hard = id => rank(id) <= 3 || rank(id) >= 15;
+  const group = (id, trump) => hard(id) || suit(id) === trump ? 4 : suit(id);
+  const level = (id, trump) => {
+    const r = rank(id);
+    if (r >= 15) return r + 4;
+    if (r === 3) return suit(id) === trump ? 18 : 17;
+    if (r === 2) return suit(id) === trump ? 16 : 15;
+    return r;
+  };
+  const value = id => rank(id) === 5 ? 5 : [10, 13].includes(rank(id)) ? 10 : 0;
+  const points = cards => cards.reduce((sum, id) => sum + value(id), 0);
+  const label = id => rank(id) === 16 ? '大王' : rank(id) === 15 ? '小王' : SUITS[suit(id)] + ({ 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[rank(id)] || rank(id));
+  const shortRank = id => ({ 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '小王', 16: '大王' }[rank(id)] || String(rank(id)));
+  const byPower = trump => (a, b) => level(b, trump) - level(a, trump) || face(a) - face(b) || a - b;
+  function sortHand(cards, trump) {
+    const colors = [1, 0, 3, 2];
+    const first = Math.max(0, colors.indexOf(trump));
+    const suits = [...colors.slice(first), ...colors.slice(0, first)];
+    const groups = [4, ...suits.filter(s => s !== trump)];
+    return cards.slice().sort((a, b) => groups.indexOf(group(a, trump)) - groups.indexOf(group(b, trump))
+      || level(b, trump) - level(a, trump) || suits.indexOf(suit(a)) - suits.indexOf(suit(b)) || face(a) - face(b) || a - b);
+  }
+  const remove = (cards, chosen) => { const ids = new Set(chosen); return cards.filter(id => !ids.has(id)); };
+  const pairs = cards => {
+    const map = new Map();
+    cards.forEach(id => { const f = face(id); if (!map.has(f)) map.set(f, []); map.get(f).push(id); });
+    return [...map.values()].filter(list => list.length === 2);
+  };
+  function seeded(seed) {
+    let state = seed >>> 0;
+    return () => { state += 0x6D2B79F5; let x = state; x = Math.imul(x ^ x >>> 15, x | 1); x ^= x + Math.imul(x ^ x >>> 7, x | 61); return ((x ^ x >>> 14) >>> 0) / 4294967296; };
+  }
+  function shuffle(cards, random = Math.random) {
+    const result = cards.slice();
+    for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
+    return result;
+  }
+  function describe(cards, trump) {
+    if (!cards.length) return null;
+    const g = group(cards[0], trump);
+    if (!cards.every(id => group(id, trump) === g)) return null;
+    const n = cards.length;
+    const max = Math.max(...cards.map(id => level(id, trump)));
+    if (n === 1) return { type: 'single', n, group: g, max };
+    const ps = pairs(cards);
+    if (n === 2 && ps.length === 1) return { type: 'pair', n, group: g, max };
+    if (n >= 4 && n % 2 === 0 && ps.length * 2 === n) {
+      const levels = ps.map(p => level(p[0], trump)).sort((a, b) => a - b);
+      if (levels.every((v, i) => !i || v === levels[i - 1] + 1)) return { type: 'tractor', n, group: g, max };
+    }
+    if (g !== 4 && ps.length === 0) return { type: 'throw', n, group: g, max };
+    return null;
+  }
+  const typeName = d => !d ? '未成牌型' : d.type === 'single' ? '单牌' : d.type === 'pair' ? '对子' : d.type === 'throw' ? `甩牌 · ${d.n} 张` : `${d.n / 2} 对拖拉机`;
+  function mainSelectionError(pool, chosen, n, trump) {
+    const requiredPairs = Math.min(Math.floor(n / 2), pairs(pool).length);
+    const selectedPairs = pairs(chosen);
+    if (selectedPairs.length < requiredPairs) return `主牌必须先出 ${requiredPairs} 对对子`;
+    const usedPairs = selectedPairs.flat();
+    const singles = remove(chosen, usedPairs);
+    const remaining = remove(pool, usedPairs);
+    const mustHard = remaining.filter(hard).sort(byPower(trump)).slice(0, singles.length).map(id => level(id, trump));
+    const actualHard = singles.filter(hard).sort(byPower(trump)).map(id => level(id, trump));
+    if (actualHard.length !== mustHard.length || actualHard.some((v, i) => v !== mustHard[i])) return '补单牌必须先按大小出硬主，主花色的 2、3 也在其中';
+    return '';
+  }
+  function validate(hand, cards, lead, trump) {
+    if (!cards.length) return '请先选牌';
+    if (new Set(cards).size !== cards.length || cards.some(id => !hand.includes(id))) return '所选牌不在手中';
+    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子或同花色的不同单牌';
+    const d = describe(lead, trump);
+    if (!d) return '首家牌型无效';
+    if (cards.length !== d.n) return `本轮需要跟 ${d.n} 张牌`;
+    const pool = hand.filter(id => group(id, trump) === d.group);
+    const same = cards.filter(id => group(id, trump) === d.group);
+    const needSame = Math.min(d.n, pool.length);
+    if (same.length !== needSame) return d.group === 4 ? '有主牌必须先跟主牌' : `必须先跟 ${needSame} 张${SUIT_NAMES[d.group]}`;
+    if (d.type === 'single') return '';
+    const structured = d.type !== 'throw';
+    if (structured) {
+      const requiredPairs = Math.min(Math.floor(needSame / 2), pairs(pool).length);
+      if (pairs(same).length < requiredPairs) return `该花色必须先跟 ${requiredPairs} 对对子，不强制跟成拖拉机`;
+      if (d.group === 4) return mainSelectionError(pool, same, needSame, trump);
+    }
+    const remaining = d.n - needSame;
+    if (!remaining || d.group === 4) return '';
+    const mainPool = hand.filter(id => group(id, trump) === 4);
+    const mainChosen = cards.filter(id => group(id, trump) === 4);
+    const needMain = Math.min(remaining, mainPool.length);
+    if (mainChosen.length !== needMain) return `同花色不足，必须先补 ${needMain} 张主牌`;
+    return structured ? mainSelectionError(mainPool, mainChosen, needMain, trump) : '';
+  }
+  function strength(cards, lead, trump) {
+    const d = describe(lead, trump);
+    if (!d || cards.length !== d.n) return -1;
+    const g = group(cards[0], trump);
+    if (!cards.every(id => group(id, trump) === g) || (g !== d.group && g !== 4)) return -1;
+    if (d.group === 4 && g !== 4) return -1;
+    if (d.type === 'pair' && pairs(cards).length !== 1) return -1;
+    if (d.type === 'tractor' && describe(cards, trump)?.type !== 'tractor') return -1;
+    return (g === 4 ? 100 : 0) + Math.max(...cards.map(id => level(id, trump)));
+  }
+  function winningIndex(plays, trump) {
+    let best = 0;
+    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0].cards, trump) > strength(plays[best].cards, plays[0].cards, trump)) best = i;
+    return best;
+  }
+  function throwFailure(cards, hands, player, trump) {
+    const d = describe(cards, trump);
+    if (d?.type !== 'throw') return false;
+    const min = Math.min(...cards.map(id => level(id, trump)));
+    return hands.some((hand, p) => p !== player && hand.some(id => group(id, trump) === d.group && level(id, trump) > min));
+  }
+  function captureBottom(plays, dealer, trump) {
+    if (plays.length !== 3) return false;
+    const winner = plays[winningIndex(plays, trump)];
+    return winner.player !== dealer && winner.cards.every(id => group(id, trump) === 4);
+  }
+  // 分牌以 5 分递增；守 200 时，闲家取得任何分数即破庄。
+  const farmerTarget = bid => bid === 200 ? 5 : 200 - bid;
+  function result(dealer, bid, farmerScore, failed) {
+    const dealerWins = !failed[dealer] && farmerScore < farmerTarget(bid);
+    return { dealerWins, wins: [0, 1, 2].map(p => !failed[p] && (p === dealer ? dealerWins : !dealerWins)) };
+  }
+  function leadMoves(hand, trump, unseen = [], allowThrow = true) {
+    const moves = [];
+    const faces = new Set();
+    hand.forEach(id => { if (!faces.has(face(id))) moves.push([id]); faces.add(face(id)); });
+    const ps = pairs(hand);
+    moves.push(...ps);
+    for (let g = 0; g <= 4; g++) {
+      const groupPairs = ps.filter(p => group(p[0], trump) === g);
+      const extend = (path, nextLevel) => {
+        groupPairs.filter(p => level(p[0], trump) === nextLevel).forEach(p => {
+          const next = [...path, ...p];
+          moves.push(next);
+          extend(next, nextLevel + 1);
+        });
+      };
+      groupPairs.forEach(p => extend(p, level(p[0], trump) + 1));
+      if (allowThrow && g < 4) {
+        const unknownMax = Math.max(0, ...unseen.filter(id => group(id, trump) === g).map(id => level(id, trump)));
+        const safe = hand.filter(id => group(id, trump) === g && level(id, trump) >= unknownMax).sort(byPower(trump));
+        const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
+        if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
+      }
+    }
+    return moves;
+  }
+  function pick(pool, n, pairFirst, hardFirst, trump, mode, random) {
+    if (n >= pool.length) return pool.slice();
+    const priority = id => mode === 0 ? -level(id, trump) * 3 - value(id) : mode === 1 ? level(id, trump) * 3 : mode === 2 ? value(id) * 10 - level(id, trump) : mode === 3 ? -value(id) * 10 - level(id, trump) : random() * 100;
+    let left = pool.slice(), selected = [];
+    if (pairFirst) {
+      const ps = pairs(left).map(p => ({ p, weight: priority(p[0]) })).sort((a, b) => b.weight - a.weight);
+      const count = Math.min(Math.floor(n / 2), ps.length);
+      selected = ps.slice(0, count).flatMap(x => x.p);
+      left = remove(left, selected);
+    }
+    if (hardFirst) {
+      const forced = left.filter(hard).sort(byPower(trump)).slice(0, n - selected.length);
+      selected.push(...forced);
+      left = remove(left, forced);
+    }
+    const choices = left.map(id => ({ id, weight: priority(id) })).sort((a, b) => b.weight - a.weight).slice(0, n - selected.length).map(x => x.id);
+    return [...selected, ...choices];
+  }
+  function legalMoves(hand, lead, trump, options = {}) {
+    const random = options.random || Math.random;
+    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false);
+    const d = describe(lead, trump);
+    if (d.n === 1) return hand.map(id => [id]).filter(move => !validate(hand, move, lead, trump));
+    const pool = hand.filter(id => group(id, trump) === d.group);
+    const nSame = Math.min(d.n, pool.length);
+    const structured = d.type !== 'throw';
+    const results = new Map();
+    const add = move => { if (!validate(hand, move, lead, trump)) results.set(move.slice().sort((a, b) => a - b).join(','), move); };
+    for (let mode = 0; mode < (options.samples || 20); mode++) {
+      let chosen = pick(pool, nSame, structured, structured && d.group === 4, trump, mode, random);
+      let n = d.n - chosen.length;
+      if (n && d.group !== 4) {
+        const main = hand.filter(id => group(id, trump) === 4);
+        chosen.push(...pick(main, Math.min(n, main.length), structured, structured, trump, mode, random));
+      }
+      n = d.n - chosen.length;
+      if (n) chosen.push(...pick(remove(hand, chosen), n, false, false, trump, mode, random));
+      add(chosen);
+    }
+    const competitive = pool.length >= d.n ? pool : pool.length === 0 ? hand.filter(id => group(id, trump) === 4) : [];
+    if (competitive.length >= d.n) leadMoves(competitive, trump, [], false).filter(move => move.length === d.n).forEach(add);
+    return [...results.values()];
+  }
+  function shouldDeclare(hand, trump, declared, locked, dealt, random = Math.random) {
+    if (locked) return null;
+    let best = null;
+    for (let s = 0; s < 4; s++) {
+      if (declared && s === trump) continue;
+      const threes = hand.filter(id => rank(id) === 3 && suit(id) === s);
+      if (!threes.length || (declared && threes.length < 2)) continue;
+      const quality = hand.filter(id => group(id, s) === 4).length + pairs(hand.filter(id => group(id, s) === 4)).length * 2.4 + hand.filter(id => rank(id) >= 15).length * 2.5;
+      const expected = quality / Math.max(12, hand.length) * 33;
+      const threshold = declared ? 22 : dealt < 50 ? 25 : 18;
+      if (expected >= threshold && (!best || expected > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality: expected };
+    }
+    return best;
+  }
+  function bidLimit(hand, trump) {
+    const main = hand.filter(id => group(id, trump) === 4);
+    const tops = main.reduce((s, id) => s + Math.max(0, level(id, trump) - 14) * 1.6, 0);
+    const pairScore = pairs(main).reduce((s, p) => s + 4 + Math.max(0, level(p[0], trump) - 13) * 0.6, 0);
+    const sideControl = hand.filter(id => group(id, trump) !== 4 && rank(id) === 14).length * 4;
+    const longMain = Math.max(0, main.length - 13) * 2.7;
+    const score = tops + pairScore + sideControl + longMain;
+    return score < 23 ? 110 : Math.min(190, 120 + Math.floor((score - 23) / 12) * 10);
+  }
+  function bury(hand, trump, random = Math.random, trials = 110) {
+    let best = null, bestScore = -Infinity;
+    const evaluate = keep => {
+      const main = keep.filter(id => group(id, trump) === 4);
+      let score = main.reduce((n, id) => n + 5 + (hard(id) ? 4 : 0) + Math.max(0, level(id, trump) - 12) * 2, 0);
+      score += pairs(keep).reduce((n, p) => n + (group(p[0], trump) === 4 ? 16 : 9) + level(p[0], trump) * 0.3, 0);
+      score += leadMoves(keep, trump, [], false).filter(m => describe(m, trump).type === 'tractor').reduce((n, m) => n + m.length * 1.3, 0);
+      for (let s = 0; s < 4; s++) {
+        if (s === trump) continue;
+        const side = keep.filter(id => group(id, trump) === s);
+        if (!side.length) score += 20;
+        const top = side.filter(id => rank(id) === 14).length;
+        score += top * 10 + (side.length >= 5 && top ? side.length * 1.1 : 0);
+        score -= side.filter(id => value(id) && rank(id) !== 14 && !top).reduce((n, id) => n + value(id) * 0.22, 0);
+      }
+      return score;
+    };
+    for (let trial = 0; trial < trials; trial++) {
+      const keep = hand.slice();
+      const discards = [];
+      while (discards.length < 9) {
+        const pairsNow = new Set(pairs(keep).flat());
+        const ranked = keep.map(id => {
+          const g = group(id, trump), length = keep.filter(x => group(x, trump) === g).length;
+          const protectedValue = (g === 4 ? 15 : 0) + (hard(id) ? 15 : 0) + level(id, trump) * 0.65 + (pairsNow.has(id) ? 8 : 0) + (rank(id) === 14 ? 8 : 0) + (g !== 4 ? length * 0.45 : 0);
+          return { id, score: protectedValue + (trial ? random() * 12 : 0) };
+        }).sort((a, b) => a.score - b.score);
+        const id = ranked[0].id;
+        discards.push(id); keep.splice(keep.indexOf(id), 1);
+      }
+      const score = evaluate(keep);
+      if (score > bestScore) { bestScore = score; best = discards; }
+    }
+    return best;
+  }
+  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
+})();
+globalThis.TractorRules = Rules;
+if (typeof module !== 'undefined') module.exports = Rules;
+</script>
+<script>'use strict';
+const Bot = (() => {
+  const R = globalThis.TractorRules;
+  const sameTeam = (a, b, dealer) => (a === dealer) === (b === dealer);
+  function unknownCards(view) {
+    const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    return R.deck().filter(id => !known.has(id));
+  }
+  function sampleHands(view, random) {
+    const hands = [[], [], []];
+    hands[view.player] = view.hand.slice();
+    const unavailable = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    for (const entry of view.shown) {
+      if (entry.player === view.player || (entry.player === view.dealer && !view.bottom)) continue;
+      for (const id of entry.cards) if (!unavailable.has(id)) { hands[entry.player].push(id); unavailable.add(id); }
+    }
+    const unknown = R.deck().filter(id => !unavailable.has(id));
+    const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
+    if (!view.bottom) targets.push({ p: 3, count: 9 });
+    if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
+    const allowed = (id, p) => p === 3 || !view.voids[p].includes(R.group(id, view.trump));
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const bins = targets.map(t => ({ ...t, cards: [] }));
+      const ordered = R.shuffle(unknown, random).sort((a, b) => targets.filter(t => allowed(a, t.p)).length - targets.filter(t => allowed(b, t.p)).length);
+      let success = true;
+      for (const id of ordered) {
+        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p));
+        if (!possible.length) { success = false; break; }
+        let roll = random() * possible.reduce((sum, b) => sum + b.count - b.cards.length, 0);
+        let selected = possible[possible.length - 1];
+        for (const bin of possible) { roll -= bin.count - bin.cards.length; if (roll < 0) { selected = bin; break; } }
+        selected.cards.push(id);
+      }
+      if (success) {
+        let bottom = view.bottom?.slice() || [];
+        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else hands[bin.p].push(...bin.cards); }
+        return { hands, bottom };
+      }
+    }
+    return null;
+  }
+  function prior(hand, cards, trick, player, dealer, trump, unseen) {
+    const lead = trick.length ? trick[0].cards : null;
+    const description = R.describe(cards, trump);
+    const beforePairs = R.pairs(hand).length;
+    const after = R.remove(hand, cards);
+    const broken = beforePairs - R.pairs(after).length - R.pairs(cards).length;
+    const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
+    let score = cards.length * 1.3 - cost - broken * 5;
+    if (!lead) {
+      const g = R.group(cards[0], trump), max = Math.max(...cards.map(id => R.level(id, trump)));
+      const threats = unseen.filter(id => R.group(id, trump) === g && R.level(id, trump) > max).length;
+      score += threats === 0 ? 13 : -Math.min(12, threats * 1.6);
+      if (description?.type === 'pair') score += 4;
+      if (description?.type === 'tractor') score += cards.length * 3;
+      if (description?.type === 'throw') score += cards.length * 4;
+      if (g === 4) {
+        const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
+        score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
+      }
+      score -= R.points(cards) * (threats ? 0.4 : -0.15);
+    } else {
+      const current = trick[R.winningIndex(trick, trump)];
+      const wins = R.strength(cards, lead, trump) > R.strength(current.cards, lead, trump);
+      const friendly = sameTeam(player, current.player, dealer);
+      const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
+      if (wins) score += (friendly ? 0 : 10 + pot * 0.8) - (friendly && trick.length === 2 ? 7 : 0);
+      const safeFriendly = friendly && (trick.length === 2 || R.strength(current.cards, lead, trump) >= 118);
+      score += R.points(cards) * ((wins || safeFriendly) ? 0.7 : -0.85);
+      if (!wins && !friendly) score -= 4;
+    }
+    return score;
+  }
+  function advance(sim, player, move) {
+    sim.hands[player] = R.remove(sim.hands[player], move);
+    sim.trick.push({ player, cards: move });
+    if (sim.trick.length < 3) { sim.turn = (player + 1) % 3; return false; }
+    const winner = sim.trick[R.winningIndex(sim.trick, sim.trump)].player;
+    const pot = sim.trick.reduce((sum, entry) => sum + R.points(entry.cards), 0);
+    if (winner !== sim.dealer) sim.farmerScore += pot;
+    const done = sim.hands.every(hand => !hand.length);
+    if (done && R.captureBottom(sim.trick, sim.dealer, sim.trump)) sim.farmerScore += R.points(sim.bottom);
+    sim.trick = [];
+    sim.turn = winner;
+    sim.completed++;
+    return done;
+  }
+  function rolloutPick(sim, random) {
+    const hand = sim.hands[sim.turn];
+    const lead = sim.trick[0]?.cards || null;
+    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
+    const moves = R.legalMoves(hand, lead, sim.trump, { random, samples: 5, unseen, allowThrow: false });
+    let best = moves[0], bestScore = -Infinity;
+    for (const move of moves) {
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen);
+      if (!lead) {
+        const rivals = sim.hands.flatMap((h, p) => sameTeam(sim.turn, p, sim.dealer) ? [] : h);
+        const g = R.group(move[0], sim.trump);
+        if (g !== 4 && rivals.filter(id => R.group(id, sim.trump) === g).length === 0) score -= 8;
+      }
+      if (score > bestScore) { bestScore = score; best = move; }
+    }
+    return best;
+  }
+  function leafValue(sim, view) {
+    const sign = view.player === view.dealer ? -1 : 1;
+    const threshold = R.farmerTarget(view.bid);
+    if (sim.hands.every(hand => hand.length === 0)) {
+      const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
+      const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
+      return (win ? 850 : -850) + sign * sim.farmerScore;
+    }
+    let score = sign * (sim.farmerScore - view.farmerScore) * 4.5;
+    if (sim.farmerScore >= threshold) score += sign * 150;
+    score += sameTeam(sim.turn, view.player, view.dealer) ? 6 : -6;
+    sim.hands.forEach((hand, p) => {
+      let control = hand.reduce((sum, id) => sum + (R.group(id, view.trump) === 4 ? 1.2 + Math.max(0, R.level(id, view.trump) - 14) * 1.1 : R.rank(id) === 14 ? 2.8 : 0), 0);
+      control += R.pairs(hand).reduce((sum, pair) => sum + (R.group(pair[0], view.trump) === 4 ? 3.5 : 1.7), 0);
+      score += control * (sameTeam(p, view.player, view.dealer) ? 1 : -1);
+    });
+    return score;
+  }
+  function choose(view) {
+    const started = performance.now();
+    const random = R.seeded(view.seed);
+    const unseen = unknownCards(view);
+    const candidates = R.legalMoves(view.hand, view.trick[0]?.cards || null, view.trump, { random, samples: 28, unseen });
+    if (!candidates.length) throw new Error('没有合法候选牌');
+    const ranked = candidates.map(cards => ({ cards, prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen), total: 0, visits: 0 })).sort((a, b) => b.prior - a.prior).slice(0, 18);
+    if (ranked.length === 1) return { cards: ranked[0].cards, samples: 0, elapsed: performance.now() - started };
+    const depth = view.hand.length <= 9 ? 12 : view.hand.length <= 18 ? 4 : 3;
+    const limit = view.thinkMs || 1100;
+    let samples = 0;
+    while (samples < (view.maxSamples || 48) && performance.now() - started < limit) {
+      const sample = sampleHands(view, random);
+      if (!sample) break;
+      const sampleSeed = Math.floor(random() * 0x7fffffff);
+      for (const candidate of ranked) {
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), completed: 0 };
+        const rolloutRandom = R.seeded(sampleSeed);
+        let done = advance(sim, view.player, candidate.cards);
+        let guard = 0;
+        while (!done && sim.completed < depth && guard++ < 110) {
+          const move = rolloutPick(sim, rolloutRandom);
+          if (!move) break;
+          done = advance(sim, sim.turn, move);
+        }
+        candidate.total += leafValue(sim, view);
+        candidate.visits++;
+      }
+      samples++;
+    }
+    ranked.sort((a, b) => ((b.visits ? b.total / b.visits : 0) + b.prior * 0.35) - ((a.visits ? a.total / a.visits : 0) + a.prior * 0.35));
+    return { cards: ranked[0].cards, samples, candidates: candidates.length, elapsed: performance.now() - started };
+  }
+  const contractCache = new Map();
+  function contract(view) {
+    const key = `${view.seed}:${view.trump}:${view.hand.join(',')}:${view.shown.map(entry => entry.player + '=' + entry.cards.join(',')).join(';')}`;
+    if (contractCache.has(key)) return contractCache.get(key);
+    const started = performance.now(), random = R.seeded(view.seed + 713);
+    const scores = [];
+    const hypothetical = { ...view, dealer: view.player, bottom: null };
+    do {
+      const sample = sampleHands(hypothetical, random);
+      if (!sample) break;
+      const all = sample.hands[view.player].concat(sample.bottom);
+      const buried = R.bury(all, view.trump, random, 10);
+      sample.hands[view.player] = R.remove(all, buried);
+      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
+      for (let step = 0; step < 100 && !sim.hands.every(h => h.length === 0); step++) {
+        const move = rolloutPick(sim, random);
+        if (!move) break;
+        advance(sim, sim.turn, move);
+      }
+      if (sim.hands.every(h => h.length === 0)) scores.push(sim.farmerScore);
+    } while (scores.length < 24 && (scores.length < 6 || performance.now() - started < (view.thinkMs || 900)));
+    scores.sort((a, b) => a - b);
+    const riskScore = scores.length ? scores[Math.floor((scores.length - 1) * .65)] : 90;
+    const sweep = scores.length >= 12 && scores.every(score => score === 0);
+    const limit = sweep ? 200 : Math.max(110, Math.min(190, Math.floor((200 - riskScore - 5) / 10) * 10));
+    const answer = { limit, samples: scores.length, elapsed: performance.now() - started };
+    if (contractCache.size > 60) contractCache.clear();
+    contractCache.set(key, answer);
+    return answer;
+  }
+  function auction(view) {
+    const suits = view.reverseSuits || [];
+    const budget = Math.max(120, (view.thinkMs || 900) / (suits.length + 1));
+    const current = contract({ ...view, thinkMs: budget });
+    let best = null;
+    for (const suit of suits) {
+      const changed = contract({ ...view, trump: suit, thinkMs: budget });
+      if (changed.limit >= 130 && (!best || changed.limit > best.limit)) best = { ...changed, reverseSuit: suit };
+    }
+    const nextBid = view.bid ? view.bid + 10 : view.bidBase || 120;
+    if (best && (current.limit < nextBid || best.limit >= current.limit + 10)) return best;
+    return current;
+  }
+  return { choose, contract, auction, unknownCards, sampleHands, prior };
+})();
+globalThis.TractorBot = Bot;
+if (typeof module !== 'undefined') module.exports = Bot;
+</script>
+<script type="text/plain" id="worker-source">'use strict';
+const Rules = (() => {
+  const SUITS = ['♠', '♥', '♣', '♦'];
+  const SUIT_NAMES = ['黑桃', '红桃', '梅花', '方块'];
+  const deck = () => Array.from({ length: 108 }, (_, id) => id);
+  const face = id => id % 54;
+  const suit = id => face(id) >= 52 ? -1 : Math.floor(face(id) / 13);
+  const rank = id => face(id) >= 52 ? face(id) - 37 : face(id) % 13 + 2;
+  const hard = id => rank(id) <= 3 || rank(id) >= 15;
+  const group = (id, trump) => hard(id) || suit(id) === trump ? 4 : suit(id);
+  const level = (id, trump) => {
+    const r = rank(id);
+    if (r >= 15) return r + 4;
+    if (r === 3) return suit(id) === trump ? 18 : 17;
+    if (r === 2) return suit(id) === trump ? 16 : 15;
+    return r;
+  };
+  const value = id => rank(id) === 5 ? 5 : [10, 13].includes(rank(id)) ? 10 : 0;
+  const points = cards => cards.reduce((sum, id) => sum + value(id), 0);
+  const label = id => rank(id) === 16 ? '大王' : rank(id) === 15 ? '小王' : SUITS[suit(id)] + ({ 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[rank(id)] || rank(id));
+  const shortRank = id => ({ 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '小王', 16: '大王' }[rank(id)] || String(rank(id)));
+  const byPower = trump => (a, b) => level(b, trump) - level(a, trump) || face(a) - face(b) || a - b;
+  function sortHand(cards, trump) {
+    const colors = [1, 0, 3, 2];
+    const first = Math.max(0, colors.indexOf(trump));
+    const suits = [...colors.slice(first), ...colors.slice(0, first)];
+    const groups = [4, ...suits.filter(s => s !== trump)];
+    return cards.slice().sort((a, b) => groups.indexOf(group(a, trump)) - groups.indexOf(group(b, trump))
+      || level(b, trump) - level(a, trump) || suits.indexOf(suit(a)) - suits.indexOf(suit(b)) || face(a) - face(b) || a - b);
+  }
+  const remove = (cards, chosen) => { const ids = new Set(chosen); return cards.filter(id => !ids.has(id)); };
+  const pairs = cards => {
+    const map = new Map();
+    cards.forEach(id => { const f = face(id); if (!map.has(f)) map.set(f, []); map.get(f).push(id); });
+    return [...map.values()].filter(list => list.length === 2);
+  };
+  function seeded(seed) {
+    let state = seed >>> 0;
+    return () => { state += 0x6D2B79F5; let x = state; x = Math.imul(x ^ x >>> 15, x | 1); x ^= x + Math.imul(x ^ x >>> 7, x | 61); return ((x ^ x >>> 14) >>> 0) / 4294967296; };
+  }
+  function shuffle(cards, random = Math.random) {
+    const result = cards.slice();
+    for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
+    return result;
+  }
+  function describe(cards, trump) {
+    if (!cards.length) return null;
+    const g = group(cards[0], trump);
+    if (!cards.every(id => group(id, trump) === g)) return null;
+    const n = cards.length;
+    const max = Math.max(...cards.map(id => level(id, trump)));
+    if (n === 1) return { type: 'single', n, group: g, max };
+    const ps = pairs(cards);
+    if (n === 2 && ps.length === 1) return { type: 'pair', n, group: g, max };
+    if (n >= 4 && n % 2 === 0 && ps.length * 2 === n) {
+      const levels = ps.map(p => level(p[0], trump)).sort((a, b) => a - b);
+      if (levels.every((v, i) => !i || v === levels[i - 1] + 1)) return { type: 'tractor', n, group: g, max };
+    }
+    if (g !== 4 && ps.length === 0) return { type: 'throw', n, group: g, max };
+    return null;
+  }
+  const typeName = d => !d ? '未成牌型' : d.type === 'single' ? '单牌' : d.type === 'pair' ? '对子' : d.type === 'throw' ? `甩牌 · ${d.n} 张` : `${d.n / 2} 对拖拉机`;
+  function mainSelectionError(pool, chosen, n, trump) {
+    const requiredPairs = Math.min(Math.floor(n / 2), pairs(pool).length);
+    const selectedPairs = pairs(chosen);
+    if (selectedPairs.length < requiredPairs) return `主牌必须先出 ${requiredPairs} 对对子`;
+    const usedPairs = selectedPairs.flat();
+    const singles = remove(chosen, usedPairs);
+    const remaining = remove(pool, usedPairs);
+    const mustHard = remaining.filter(hard).sort(byPower(trump)).slice(0, singles.length).map(id => level(id, trump));
+    const actualHard = singles.filter(hard).sort(byPower(trump)).map(id => level(id, trump));
+    if (actualHard.length !== mustHard.length || actualHard.some((v, i) => v !== mustHard[i])) return '补单牌必须先按大小出硬主，主花色的 2、3 也在其中';
+    return '';
+  }
+  function validate(hand, cards, lead, trump) {
+    if (!cards.length) return '请先选牌';
+    if (new Set(cards).size !== cards.length || cards.some(id => !hand.includes(id))) return '所选牌不在手中';
+    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子或同花色的不同单牌';
+    const d = describe(lead, trump);
+    if (!d) return '首家牌型无效';
+    if (cards.length !== d.n) return `本轮需要跟 ${d.n} 张牌`;
+    const pool = hand.filter(id => group(id, trump) === d.group);
+    const same = cards.filter(id => group(id, trump) === d.group);
+    const needSame = Math.min(d.n, pool.length);
+    if (same.length !== needSame) return d.group === 4 ? '有主牌必须先跟主牌' : `必须先跟 ${needSame} 张${SUIT_NAMES[d.group]}`;
+    if (d.type === 'single') return '';
+    const structured = d.type !== 'throw';
+    if (structured) {
+      const requiredPairs = Math.min(Math.floor(needSame / 2), pairs(pool).length);
+      if (pairs(same).length < requiredPairs) return `该花色必须先跟 ${requiredPairs} 对对子，不强制跟成拖拉机`;
+      if (d.group === 4) return mainSelectionError(pool, same, needSame, trump);
+    }
+    const remaining = d.n - needSame;
+    if (!remaining || d.group === 4) return '';
+    const mainPool = hand.filter(id => group(id, trump) === 4);
+    const mainChosen = cards.filter(id => group(id, trump) === 4);
+    const needMain = Math.min(remaining, mainPool.length);
+    if (mainChosen.length !== needMain) return `同花色不足，必须先补 ${needMain} 张主牌`;
+    return structured ? mainSelectionError(mainPool, mainChosen, needMain, trump) : '';
+  }
+  function strength(cards, lead, trump) {
+    const d = describe(lead, trump);
+    if (!d || cards.length !== d.n) return -1;
+    const g = group(cards[0], trump);
+    if (!cards.every(id => group(id, trump) === g) || (g !== d.group && g !== 4)) return -1;
+    if (d.group === 4 && g !== 4) return -1;
+    if (d.type === 'pair' && pairs(cards).length !== 1) return -1;
+    if (d.type === 'tractor' && describe(cards, trump)?.type !== 'tractor') return -1;
+    return (g === 4 ? 100 : 0) + Math.max(...cards.map(id => level(id, trump)));
+  }
+  function winningIndex(plays, trump) {
+    let best = 0;
+    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0].cards, trump) > strength(plays[best].cards, plays[0].cards, trump)) best = i;
+    return best;
+  }
+  function throwFailure(cards, hands, player, trump) {
+    const d = describe(cards, trump);
+    if (d?.type !== 'throw') return false;
+    const min = Math.min(...cards.map(id => level(id, trump)));
+    return hands.some((hand, p) => p !== player && hand.some(id => group(id, trump) === d.group && level(id, trump) > min));
+  }
+  function captureBottom(plays, dealer, trump) {
+    if (plays.length !== 3) return false;
+    const winner = plays[winningIndex(plays, trump)];
+    return winner.player !== dealer && winner.cards.every(id => group(id, trump) === 4);
+  }
+  // 分牌以 5 分递增；守 200 时，闲家取得任何分数即破庄。
+  const farmerTarget = bid => bid === 200 ? 5 : 200 - bid;
+  function result(dealer, bid, farmerScore, failed) {
+    const dealerWins = !failed[dealer] && farmerScore < farmerTarget(bid);
+    return { dealerWins, wins: [0, 1, 2].map(p => !failed[p] && (p === dealer ? dealerWins : !dealerWins)) };
+  }
+  function leadMoves(hand, trump, unseen = [], allowThrow = true) {
+    const moves = [];
+    const faces = new Set();
+    hand.forEach(id => { if (!faces.has(face(id))) moves.push([id]); faces.add(face(id)); });
+    const ps = pairs(hand);
+    moves.push(...ps);
+    for (let g = 0; g <= 4; g++) {
+      const groupPairs = ps.filter(p => group(p[0], trump) === g);
+      const extend = (path, nextLevel) => {
+        groupPairs.filter(p => level(p[0], trump) === nextLevel).forEach(p => {
+          const next = [...path, ...p];
+          moves.push(next);
+          extend(next, nextLevel + 1);
+        });
+      };
+      groupPairs.forEach(p => extend(p, level(p[0], trump) + 1));
+      if (allowThrow && g < 4) {
+        const unknownMax = Math.max(0, ...unseen.filter(id => group(id, trump) === g).map(id => level(id, trump)));
+        const safe = hand.filter(id => group(id, trump) === g && level(id, trump) >= unknownMax).sort(byPower(trump));
+        const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
+        if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
+      }
+    }
+    return moves;
+  }
+  function pick(pool, n, pairFirst, hardFirst, trump, mode, random) {
+    if (n >= pool.length) return pool.slice();
+    const priority = id => mode === 0 ? -level(id, trump) * 3 - value(id) : mode === 1 ? level(id, trump) * 3 : mode === 2 ? value(id) * 10 - level(id, trump) : mode === 3 ? -value(id) * 10 - level(id, trump) : random() * 100;
+    let left = pool.slice(), selected = [];
+    if (pairFirst) {
+      const ps = pairs(left).map(p => ({ p, weight: priority(p[0]) })).sort((a, b) => b.weight - a.weight);
+      const count = Math.min(Math.floor(n / 2), ps.length);
+      selected = ps.slice(0, count).flatMap(x => x.p);
+      left = remove(left, selected);
+    }
+    if (hardFirst) {
+      const forced = left.filter(hard).sort(byPower(trump)).slice(0, n - selected.length);
+      selected.push(...forced);
+      left = remove(left, forced);
+    }
+    const choices = left.map(id => ({ id, weight: priority(id) })).sort((a, b) => b.weight - a.weight).slice(0, n - selected.length).map(x => x.id);
+    return [...selected, ...choices];
+  }
+  function legalMoves(hand, lead, trump, options = {}) {
+    const random = options.random || Math.random;
+    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false);
+    const d = describe(lead, trump);
+    if (d.n === 1) return hand.map(id => [id]).filter(move => !validate(hand, move, lead, trump));
+    const pool = hand.filter(id => group(id, trump) === d.group);
+    const nSame = Math.min(d.n, pool.length);
+    const structured = d.type !== 'throw';
+    const results = new Map();
+    const add = move => { if (!validate(hand, move, lead, trump)) results.set(move.slice().sort((a, b) => a - b).join(','), move); };
+    for (let mode = 0; mode < (options.samples || 20); mode++) {
+      let chosen = pick(pool, nSame, structured, structured && d.group === 4, trump, mode, random);
+      let n = d.n - chosen.length;
+      if (n && d.group !== 4) {
+        const main = hand.filter(id => group(id, trump) === 4);
+        chosen.push(...pick(main, Math.min(n, main.length), structured, structured, trump, mode, random));
+      }
+      n = d.n - chosen.length;
+      if (n) chosen.push(...pick(remove(hand, chosen), n, false, false, trump, mode, random));
+      add(chosen);
+    }
+    const competitive = pool.length >= d.n ? pool : pool.length === 0 ? hand.filter(id => group(id, trump) === 4) : [];
+    if (competitive.length >= d.n) leadMoves(competitive, trump, [], false).filter(move => move.length === d.n).forEach(add);
+    return [...results.values()];
+  }
+  function shouldDeclare(hand, trump, declared, locked, dealt, random = Math.random) {
+    if (locked) return null;
+    let best = null;
+    for (let s = 0; s < 4; s++) {
+      if (declared && s === trump) continue;
+      const threes = hand.filter(id => rank(id) === 3 && suit(id) === s);
+      if (!threes.length || (declared && threes.length < 2)) continue;
+      const quality = hand.filter(id => group(id, s) === 4).length + pairs(hand.filter(id => group(id, s) === 4)).length * 2.4 + hand.filter(id => rank(id) >= 15).length * 2.5;
+      const expected = quality / Math.max(12, hand.length) * 33;
+      const threshold = declared ? 22 : dealt < 50 ? 25 : 18;
+      if (expected >= threshold && (!best || expected > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality: expected };
+    }
+    return best;
+  }
+  function bidLimit(hand, trump) {
+    const main = hand.filter(id => group(id, trump) === 4);
+    const tops = main.reduce((s, id) => s + Math.max(0, level(id, trump) - 14) * 1.6, 0);
+    const pairScore = pairs(main).reduce((s, p) => s + 4 + Math.max(0, level(p[0], trump) - 13) * 0.6, 0);
+    const sideControl = hand.filter(id => group(id, trump) !== 4 && rank(id) === 14).length * 4;
+    const longMain = Math.max(0, main.length - 13) * 2.7;
+    const score = tops + pairScore + sideControl + longMain;
+    return score < 23 ? 110 : Math.min(190, 120 + Math.floor((score - 23) / 12) * 10);
+  }
+  function bury(hand, trump, random = Math.random, trials = 110) {
+    let best = null, bestScore = -Infinity;
+    const evaluate = keep => {
+      const main = keep.filter(id => group(id, trump) === 4);
+      let score = main.reduce((n, id) => n + 5 + (hard(id) ? 4 : 0) + Math.max(0, level(id, trump) - 12) * 2, 0);
+      score += pairs(keep).reduce((n, p) => n + (group(p[0], trump) === 4 ? 16 : 9) + level(p[0], trump) * 0.3, 0);
+      score += leadMoves(keep, trump, [], false).filter(m => describe(m, trump).type === 'tractor').reduce((n, m) => n + m.length * 1.3, 0);
+      for (let s = 0; s < 4; s++) {
+        if (s === trump) continue;
+        const side = keep.filter(id => group(id, trump) === s);
+        if (!side.length) score += 20;
+        const top = side.filter(id => rank(id) === 14).length;
+        score += top * 10 + (side.length >= 5 && top ? side.length * 1.1 : 0);
+        score -= side.filter(id => value(id) && rank(id) !== 14 && !top).reduce((n, id) => n + value(id) * 0.22, 0);
+      }
+      return score;
+    };
+    for (let trial = 0; trial < trials; trial++) {
+      const keep = hand.slice();
+      const discards = [];
+      while (discards.length < 9) {
+        const pairsNow = new Set(pairs(keep).flat());
+        const ranked = keep.map(id => {
+          const g = group(id, trump), length = keep.filter(x => group(x, trump) === g).length;
+          const protectedValue = (g === 4 ? 15 : 0) + (hard(id) ? 15 : 0) + level(id, trump) * 0.65 + (pairsNow.has(id) ? 8 : 0) + (rank(id) === 14 ? 8 : 0) + (g !== 4 ? length * 0.45 : 0);
+          return { id, score: protectedValue + (trial ? random() * 12 : 0) };
+        }).sort((a, b) => a.score - b.score);
+        const id = ranked[0].id;
+        discards.push(id); keep.splice(keep.indexOf(id), 1);
+      }
+      const score = evaluate(keep);
+      if (score > bestScore) { bestScore = score; best = discards; }
+    }
+    return best;
+  }
+  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
+})();
+globalThis.TractorRules = Rules;
+if (typeof module !== 'undefined') module.exports = Rules;
+
+'use strict';
+const Bot = (() => {
+  const R = globalThis.TractorRules;
+  const sameTeam = (a, b, dealer) => (a === dealer) === (b === dealer);
+  function unknownCards(view) {
+    const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    return R.deck().filter(id => !known.has(id));
+  }
+  function sampleHands(view, random) {
+    const hands = [[], [], []];
+    hands[view.player] = view.hand.slice();
+    const unavailable = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    for (const entry of view.shown) {
+      if (entry.player === view.player || (entry.player === view.dealer && !view.bottom)) continue;
+      for (const id of entry.cards) if (!unavailable.has(id)) { hands[entry.player].push(id); unavailable.add(id); }
+    }
+    const unknown = R.deck().filter(id => !unavailable.has(id));
+    const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
+    if (!view.bottom) targets.push({ p: 3, count: 9 });
+    if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
+    const allowed = (id, p) => p === 3 || !view.voids[p].includes(R.group(id, view.trump));
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const bins = targets.map(t => ({ ...t, cards: [] }));
+      const ordered = R.shuffle(unknown, random).sort((a, b) => targets.filter(t => allowed(a, t.p)).length - targets.filter(t => allowed(b, t.p)).length);
+      let success = true;
+      for (const id of ordered) {
+        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p));
+        if (!possible.length) { success = false; break; }
+        let roll = random() * possible.reduce((sum, b) => sum + b.count - b.cards.length, 0);
+        let selected = possible[possible.length - 1];
+        for (const bin of possible) { roll -= bin.count - bin.cards.length; if (roll < 0) { selected = bin; break; } }
+        selected.cards.push(id);
+      }
+      if (success) {
+        let bottom = view.bottom?.slice() || [];
+        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else hands[bin.p].push(...bin.cards); }
+        return { hands, bottom };
+      }
+    }
+    return null;
+  }
+  function prior(hand, cards, trick, player, dealer, trump, unseen) {
+    const lead = trick.length ? trick[0].cards : null;
+    const description = R.describe(cards, trump);
+    const beforePairs = R.pairs(hand).length;
+    const after = R.remove(hand, cards);
+    const broken = beforePairs - R.pairs(after).length - R.pairs(cards).length;
+    const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
+    let score = cards.length * 1.3 - cost - broken * 5;
+    if (!lead) {
+      const g = R.group(cards[0], trump), max = Math.max(...cards.map(id => R.level(id, trump)));
+      const threats = unseen.filter(id => R.group(id, trump) === g && R.level(id, trump) > max).length;
+      score += threats === 0 ? 13 : -Math.min(12, threats * 1.6);
+      if (description?.type === 'pair') score += 4;
+      if (description?.type === 'tractor') score += cards.length * 3;
+      if (description?.type === 'throw') score += cards.length * 4;
+      if (g === 4) {
+        const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
+        score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
+      }
+      score -= R.points(cards) * (threats ? 0.4 : -0.15);
+    } else {
+      const current = trick[R.winningIndex(trick, trump)];
+      const wins = R.strength(cards, lead, trump) > R.strength(current.cards, lead, trump);
+      const friendly = sameTeam(player, current.player, dealer);
+      const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
+      if (wins) score += (friendly ? 0 : 10 + pot * 0.8) - (friendly && trick.length === 2 ? 7 : 0);
+      const safeFriendly = friendly && (trick.length === 2 || R.strength(current.cards, lead, trump) >= 118);
+      score += R.points(cards) * ((wins || safeFriendly) ? 0.7 : -0.85);
+      if (!wins && !friendly) score -= 4;
+    }
+    return score;
+  }
+  function advance(sim, player, move) {
+    sim.hands[player] = R.remove(sim.hands[player], move);
+    sim.trick.push({ player, cards: move });
+    if (sim.trick.length < 3) { sim.turn = (player + 1) % 3; return false; }
+    const winner = sim.trick[R.winningIndex(sim.trick, sim.trump)].player;
+    const pot = sim.trick.reduce((sum, entry) => sum + R.points(entry.cards), 0);
+    if (winner !== sim.dealer) sim.farmerScore += pot;
+    const done = sim.hands.every(hand => !hand.length);
+    if (done && R.captureBottom(sim.trick, sim.dealer, sim.trump)) sim.farmerScore += R.points(sim.bottom);
+    sim.trick = [];
+    sim.turn = winner;
+    sim.completed++;
+    return done;
+  }
+  function rolloutPick(sim, random) {
+    const hand = sim.hands[sim.turn];
+    const lead = sim.trick[0]?.cards || null;
+    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
+    const moves = R.legalMoves(hand, lead, sim.trump, { random, samples: 5, unseen, allowThrow: false });
+    let best = moves[0], bestScore = -Infinity;
+    for (const move of moves) {
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen);
+      if (!lead) {
+        const rivals = sim.hands.flatMap((h, p) => sameTeam(sim.turn, p, sim.dealer) ? [] : h);
+        const g = R.group(move[0], sim.trump);
+        if (g !== 4 && rivals.filter(id => R.group(id, sim.trump) === g).length === 0) score -= 8;
+      }
+      if (score > bestScore) { bestScore = score; best = move; }
+    }
+    return best;
+  }
+  function leafValue(sim, view) {
+    const sign = view.player === view.dealer ? -1 : 1;
+    const threshold = R.farmerTarget(view.bid);
+    if (sim.hands.every(hand => hand.length === 0)) {
+      const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
+      const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
+      return (win ? 850 : -850) + sign * sim.farmerScore;
+    }
+    let score = sign * (sim.farmerScore - view.farmerScore) * 4.5;
+    if (sim.farmerScore >= threshold) score += sign * 150;
+    score += sameTeam(sim.turn, view.player, view.dealer) ? 6 : -6;
+    sim.hands.forEach((hand, p) => {
+      let control = hand.reduce((sum, id) => sum + (R.group(id, view.trump) === 4 ? 1.2 + Math.max(0, R.level(id, view.trump) - 14) * 1.1 : R.rank(id) === 14 ? 2.8 : 0), 0);
+      control += R.pairs(hand).reduce((sum, pair) => sum + (R.group(pair[0], view.trump) === 4 ? 3.5 : 1.7), 0);
+      score += control * (sameTeam(p, view.player, view.dealer) ? 1 : -1);
+    });
+    return score;
+  }
+  function choose(view) {
+    const started = performance.now();
+    const random = R.seeded(view.seed);
+    const unseen = unknownCards(view);
+    const candidates = R.legalMoves(view.hand, view.trick[0]?.cards || null, view.trump, { random, samples: 28, unseen });
+    if (!candidates.length) throw new Error('没有合法候选牌');
+    const ranked = candidates.map(cards => ({ cards, prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen), total: 0, visits: 0 })).sort((a, b) => b.prior - a.prior).slice(0, 18);
+    if (ranked.length === 1) return { cards: ranked[0].cards, samples: 0, elapsed: performance.now() - started };
+    const depth = view.hand.length <= 9 ? 12 : view.hand.length <= 18 ? 4 : 3;
+    const limit = view.thinkMs || 1100;
+    let samples = 0;
+    while (samples < (view.maxSamples || 48) && performance.now() - started < limit) {
+      const sample = sampleHands(view, random);
+      if (!sample) break;
+      const sampleSeed = Math.floor(random() * 0x7fffffff);
+      for (const candidate of ranked) {
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), completed: 0 };
+        const rolloutRandom = R.seeded(sampleSeed);
+        let done = advance(sim, view.player, candidate.cards);
+        let guard = 0;
+        while (!done && sim.completed < depth && guard++ < 110) {
+          const move = rolloutPick(sim, rolloutRandom);
+          if (!move) break;
+          done = advance(sim, sim.turn, move);
+        }
+        candidate.total += leafValue(sim, view);
+        candidate.visits++;
+      }
+      samples++;
+    }
+    ranked.sort((a, b) => ((b.visits ? b.total / b.visits : 0) + b.prior * 0.35) - ((a.visits ? a.total / a.visits : 0) + a.prior * 0.35));
+    return { cards: ranked[0].cards, samples, candidates: candidates.length, elapsed: performance.now() - started };
+  }
+  const contractCache = new Map();
+  function contract(view) {
+    const key = `${view.seed}:${view.trump}:${view.hand.join(',')}:${view.shown.map(entry => entry.player + '=' + entry.cards.join(',')).join(';')}`;
+    if (contractCache.has(key)) return contractCache.get(key);
+    const started = performance.now(), random = R.seeded(view.seed + 713);
+    const scores = [];
+    const hypothetical = { ...view, dealer: view.player, bottom: null };
+    do {
+      const sample = sampleHands(hypothetical, random);
+      if (!sample) break;
+      const all = sample.hands[view.player].concat(sample.bottom);
+      const buried = R.bury(all, view.trump, random, 10);
+      sample.hands[view.player] = R.remove(all, buried);
+      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
+      for (let step = 0; step < 100 && !sim.hands.every(h => h.length === 0); step++) {
+        const move = rolloutPick(sim, random);
+        if (!move) break;
+        advance(sim, sim.turn, move);
+      }
+      if (sim.hands.every(h => h.length === 0)) scores.push(sim.farmerScore);
+    } while (scores.length < 24 && (scores.length < 6 || performance.now() - started < (view.thinkMs || 900)));
+    scores.sort((a, b) => a - b);
+    const riskScore = scores.length ? scores[Math.floor((scores.length - 1) * .65)] : 90;
+    const sweep = scores.length >= 12 && scores.every(score => score === 0);
+    const limit = sweep ? 200 : Math.max(110, Math.min(190, Math.floor((200 - riskScore - 5) / 10) * 10));
+    const answer = { limit, samples: scores.length, elapsed: performance.now() - started };
+    if (contractCache.size > 60) contractCache.clear();
+    contractCache.set(key, answer);
+    return answer;
+  }
+  function auction(view) {
+    const suits = view.reverseSuits || [];
+    const budget = Math.max(120, (view.thinkMs || 900) / (suits.length + 1));
+    const current = contract({ ...view, thinkMs: budget });
+    let best = null;
+    for (const suit of suits) {
+      const changed = contract({ ...view, trump: suit, thinkMs: budget });
+      if (changed.limit >= 130 && (!best || changed.limit > best.limit)) best = { ...changed, reverseSuit: suit };
+    }
+    const nextBid = view.bid ? view.bid + 10 : view.bidBase || 120;
+    if (best && (current.limit < nextBid || best.limit >= current.limit + 10)) return best;
+    return current;
+  }
+  return { choose, contract, auction, unknownCards, sampleHands, prior };
+})();
+globalThis.TractorBot = Bot;
+if (typeof module !== 'undefined') module.exports = Bot;
+
+self.onmessage = event => { const {id,kind,payload}=event.data; try { const answer=kind === "bury" ? {cards:TractorRules.bury(payload.hand,payload.trump,TractorRules.seeded(payload.seed))} : kind === "bid" ? TractorBot.auction(payload) : TractorBot.choose(payload); self.postMessage({id,answer}); } catch(error){ self.postMessage({id,error:String(error)}); } };</script>
+<script>'use strict';
+(() => {
+  const R = globalThis.TractorRules;
+  const $ = id => document.getElementById(id);
+  const NAMES = ['你', '阿衡', '知秋'];
+  const ICONS = window.GAME_ICONS;
+  const icon = name => ICONS[name] || '';
+  const esc = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const defaults = { dealSpeed: 170, difficulty: 'expert' };
+  const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch { return fallback; } };
+  const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+  let config = { ...defaults, ...read('tractor-config-v1', {}) };
+  let stats = read('tractor-stats-v1', { games: 0, wins: 0, dealerGames: 0, dealerWins: 0 });
+  let state = read('tractor-save-v4', null);
+  if (state?.version !== 4) state = null;
+  if (state) {
+    state.bidBase ??= state.declaration?.kind === '反主' ? 130 : 120;
+    state.bidRound ??= 1;
+    if (state.forced && state.declaration?.cards.length === 1 && ['declare', 'bid'].includes(state.phase)) state.locked = false;
+  }
+  const previousRulesSave = !state && read('tractor-save-v3', null);
+  let selected = new Set(), timer = null, worker = null, busy = false, jobSerial = 0, epoch = 0, toastTimer = null, lastHint = [];
+  const params = new URLSearchParams(location.search);
+  const testMode = params.has('test');
+  const seed = () => crypto.getRandomValues(new Uint32Array(1))[0];
+  const save = () => { if (state) write('tractor-save-v4', state); };
+  const log = text => { state.logs.unshift({ text, round: state.trickNo, time: Date.now() }); state.logs.length = Math.min(state.logs.length, 150); };
+  function toast(message) {
+    $('toast').textContent = message;
+    $('toast').classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('toast').classList.remove('visible'), 4100);
+  }
+  function cancelWork() {
+    clearTimeout(timer); timer = null; jobSerial++; epoch++; busy = false;
+    if (worker) { worker.terminate(); worker = null; }
+  }
+  function schedule(fn, delay) {
+    clearTimeout(timer);
+    const token = epoch;
+    timer = setTimeout(() => { timer = null; if (token === epoch) fn(); }, testMode ? 0 : delay);
+  }
+  function newRound(fresh = false, redeal = false) {
+    cancelWork();
+    if ($('modal').open) $('modal').close();
+    const old = state;
+    const first = redeal ? old.first : !old || fresh ? Math.floor(Math.random() * 3) : old.outcome?.dealerWins ? old.dealer : (old.dealer + 2) % 3;
+    const round = redeal ? old.round : !old || fresh ? 1 : old.round + 1;
+    const randomSeed = seed();
+    const cards = R.shuffle(R.deck(), R.seeded(randomSeed));
+    state = { version: 4, round, first, seed: randomSeed, phase: 'deal', hands: [[], [], []], stock: cards.slice(0, 99), bottom: cards.slice(99), dealt: 0, turn: first, trump: -1, declarer: -1, declaration: null, locked: false, forced: false, bid: 0, bidBase: 120, bidRound: 1, dealer: -1, bidder: -1, bidPassed: [false, false, false], trick: [], lastTrick: null, trickNo: 1, played: [], shown: [], voids: [[], [], []], farmerScore: 0, dealerScore: 0, wonPoints: [0, 0, 0], failed: [false, false, false], logs: [], history: [], paused: false, auto: false, lastDealt: null, outcome: null, captured: false, statsApplied: false };
+    selected.clear();
+    log('108 张牌已重新洗牌，预留 9 张底牌');
+    log(`${NAMES[first]}首先接牌，按座次依次接牌`);
+    if (redeal) log('三家均没有 3，重新接牌');
+    render(); save(); pump();
+  }
+  function declareOptions(player) {
+    if (!['deal', 'declare', 'force', 'bid'].includes(state.phase) || state.locked) return [];
+    const ownSingle = state.declarer === player && state.declaration?.cards.length === 1;
+    if (state.declarer === player && (!ownSingle || !['deal', 'declare'].includes(state.phase))) return [];
+    if (state.phase === 'bid' && (state.turn !== player || state.bidPassed[player] || state.declaration?.cards.length !== 1)) return [];
+    const options = [];
+    for (let suit = 0; suit < 4; suit++) {
+      const cards = state.hands[player].filter(id => R.rank(id) === 3 && R.suit(id) === suit);
+      if (!cards.length) continue;
+      if (state.declarer < 0) {
+        options.push({ suit, cards: cards.slice(0, 1), pair: false });
+        if (cards.length === 2) options.push({ suit, cards, pair: true });
+      } else if (cards.length === 2) {
+        if (ownSingle && suit === state.trump) options.push({ suit, cards, pair: true, upgrade: true });
+        else if (state.declarer !== player && suit !== state.trump) options.push({ suit, cards, pair: true });
+      }
+    }
+    return options;
+  }
+  function declare(player, suit, pair = false) {
+    if (!['deal', 'declare', 'force', 'bid'].includes(state.phase)) return false;
+    if (state.phase === 'force' && state.turn !== player) return false;
+    const option = declareOptions(player).find(o => o.suit === suit && o.pair === pair);
+    if (!option) return false;
+    const reverse = state.declarer >= 0 && !option.upgrade;
+    const forced = state.phase === 'force';
+    const auctionReverse = reverse && state.phase === 'bid';
+    if (auctionReverse) cancelWork();
+    state.trump = suit; state.declarer = player;
+    state.locked = reverse || pair;
+    if (reverse) state.bidBase = 130;
+    state.declaration = { player, cards: option.cards.slice(), kind: forced ? '逼庄亮主' : option.upgrade ? '对 3 加亮' : reverse ? '反主' : pair ? '对 3 定主' : '亮主' };
+    state.shown.push({ player, cards: option.cards.slice() });
+    log(`${NAMES[player]}${forced ? '被逼庄，亮出' : option.upgrade ? '加亮对 3' : reverse ? '反主' : pair ? '对 3 定主' : '亮主'} ${R.SUITS[suit]}${pair ? '33' : '3'}${state.locked ? ' · 主花色锁定' : ''}`);
+    if (forced) {
+      state.forced = true;
+      state.bid = 120; state.bidder = player;
+      state.phase = 'bid'; state.turn = (player + 1) % 3; state.bidPassed = [false, false, false];
+      log(`${NAMES[player]}保底 120 分，其他玩家可继续加价`);
+    } else if (auctionReverse) {
+      state.bid = 130; state.bidder = player; state.dealer = -1;
+      state.bidRound++; state.bidPassed = [false, false, false]; state.turn = (player + 1) % 3;
+      log(`${NAMES[player]}反主后以 130 分重新竞价，此前报价和弃叫作废`);
+      selected.clear();
+    }
+    save(); render(); pump(); return true;
+  }
+  function dealOne(fast = false) {
+    if (state.phase !== 'deal' || (state.paused && !fast)) return;
+    const player = (state.first + state.dealt) % 3;
+    const id = state.stock[state.dealt];
+    state.hands[player].push(id); state.dealt++;
+    state.lastDealt = { player, id };
+    state.turn = (state.first + state.dealt) % 3;
+    if (player !== 0 || state.auto) {
+      const proposal = player === state.declarer ? declareOptions(player).find(option => option.upgrade)
+        : R.shouldDeclare(state.hands[player], state.trump, state.declarer >= 0, state.locked, state.dealt);
+      if (proposal) declare(player, proposal.suit, proposal.cards.length === 2);
+    }
+    if (state.dealt === 99) {
+      state.stock = []; state.phase = 'declare'; state.lastDealt = null;
+      log('接牌完成，每人 33 张');
+    }
+    if (!fast) { render(); save(); pump(); }
+  }
+  function finishDealing() {
+    if (state.phase !== 'declare') return;
+    clearTimeout(timer);
+    if (state.declarer >= 0) {
+      state.phase = 'bid'; state.turn = state.declarer;
+      state.bid = 0; state.bidder = -1; state.bidPassed = [false, false, false];
+      log(`${NAMES[state.turn]}先报分`);
+    } else {
+      const firstWithThree = [0, 1, 2].map(i => (state.first + i) % 3).find(p => state.hands[p].some(id => R.rank(id) === 3));
+      if (firstWithThree === undefined) { newRound(false, true); return; }
+      state.phase = 'force'; state.turn = firstWithThree;
+      log(`无人亮主，轮到${NAMES[firstWithThree]}逼庄`);
+    }
+    selected.clear(); render(); save(); pump();
+  }
+  function bid(player, amount) {
+    if (state.phase !== 'bid' || state.turn !== player || state.bidPassed[player]) return false;
+    if (amount === 0) {
+      if (state.bid === 0) return false;
+      state.bidPassed[player] = true; log(`${NAMES[player]}弃叫，退出本轮竞价`);
+    } else {
+      if (!Number.isInteger(amount) || amount < (state.bid ? state.bid + 10 : state.bidBase) || amount > 200 || amount % 10) return false;
+      state.bid = amount; state.bidder = player;
+      log(`${NAMES[player]}叫 ${amount} 分`);
+    }
+    jobSerial++; busy = false;
+    if (state.bid === 200 || state.bidPassed.filter(Boolean).length === 2) { settleBid(); return true; }
+    state.turn = [1, 2].map(step => (player + step) % 3).find(p => !state.bidPassed[p] && p !== state.bidder);
+    render(); save(); pump(); return true;
+  }
+  function settleBid() {
+    state.dealer = state.bidder; state.turn = state.dealer;
+    state.hands[state.dealer].push(...state.bottom);
+    state.phase = 'bury'; selected.clear();
+    log(`${NAMES[state.dealer]}坐庄 · ${state.bid} 分，接底后埋牌`);
+    render(); save(); pump();
+  }
+  function bury(player, cards) {
+    if (state.phase !== 'bury' || state.dealer !== player || cards.length !== 9 || new Set(cards).size !== 9 || cards.some(id => !state.hands[player].includes(id))) return false;
+    state.hands[player] = R.remove(state.hands[player], cards); state.bottom = cards.slice();
+    state.phase = 'play'; state.turn = player; state.lastTrick = null; selected.clear();
+    log(`${NAMES[player]}埋好 9 张底牌，由庄家首攻`);
+    render(); save(); pump(); return true;
+  }
+  function addVoid(player, group) { if (!state.voids[player].includes(group)) state.voids[player].push(group); }
+  function play(player, cards) {
+    if (state.phase !== 'play' || state.turn !== player) return false;
+    const lead = state.trick[0]?.cards || null;
+    const error = R.validate(state.hands[player], cards, lead, state.trump);
+    if (error) { if (player === 0) toast(error); return false; }
+    jobSerial++; busy = false;
+    if (!lead && R.throwFailure(cards, state.hands, player, state.trump)) {
+      state.failed[player] = true;
+      state.shown.push({ player, cards: cards.slice() });
+      cards = [cards.slice().sort((a, b) => R.level(a, state.trump) - R.level(b, state.trump))[0]];
+      log(`${NAMES[player]}甩牌失败，本局判负，不扣分`);
+      if (player === 0) toast('甩牌失败：你本局判负。改出最小牌，继续完成本局。');
+    }
+    if (lead) {
+      const d = R.describe(lead, state.trump);
+      if (cards.some(id => R.group(id, state.trump) !== d.group)) addVoid(player, d.group);
+      if (d.type !== 'single' && cards.some(id => R.group(id, state.trump) !== d.group && R.group(id, state.trump) !== 4)) addVoid(player, 4);
+    }
+    state.hands[player] = R.remove(state.hands[player], cards);
+    state.played.push(...cards);
+    state.trick.push({ player, cards: cards.slice() });
+    selected.clear(); lastHint = [];
+    const desc = R.describe(cards, state.trump);
+    log(`${NAMES[player]}出 ${cards.map(R.label).join(' ')}${desc?.type === 'tractor' ? ' · 拖拉机' : ''}`);
+    if (state.trick.length === 3) { state.phase = 'collect'; }
+    else state.turn = (player + 1) % 3;
+    render(); save(); pump(); return true;
+  }
+  function collect() {
+    if (state.phase !== 'collect') return;
+    const winner = state.trick[R.winningIndex(state.trick, state.trump)].player;
+    const points = state.trick.reduce((sum, p) => sum + R.points(p.cards), 0);
+    const complete = state.hands.every(hand => hand.length === 0);
+    state.wonPoints[winner] += points;
+    if (winner === state.dealer) state.dealerScore += points; else state.farmerScore += points;
+    state.lastTrick = { plays: state.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), winner, points, number: state.trickNo };
+    state.history.push(state.lastTrick);
+    log(`${NAMES[winner]}收下本轮${points ? ` ${points} 分` : ''}`);
+    if (complete) {
+      state.captured = R.captureBottom(state.trick, state.dealer, state.trump);
+      if (state.captured) { state.farmerScore += R.points(state.bottom); log(`闲家主牌管住末轮，抠底 ${R.points(state.bottom)} 分`); }
+      else state.dealerScore += R.points(state.bottom);
+      state.outcome = R.result(state.dealer, state.bid, state.farmerScore, state.failed);
+      state.phase = 'end';
+      if (!state.statsApplied) {
+        stats.games++; if (state.outcome.wins[0]) stats.wins++;
+        if (state.dealer === 0) { stats.dealerGames++; if (state.outcome.wins[0]) stats.dealerWins++; }
+        state.statsApplied = true; write('tractor-stats-v1', stats);
+      }
+      log(state.outcome.dealerWins ? '庄家守庄成功' : '庄家守庄失败');
+      save(); render(); if (!testMode) showResult(); return;
+    }
+    state.trick = []; state.trickNo++; state.turn = winner; state.phase = 'play';
+    render(); save(); pump();
+  }
+  function makeView(player) {
+    return { player, hand: state.hands[player].slice(), trump: state.trump, dealer: state.dealer, bid: state.bid, bidBase: state.bidBase, reverseSuits: state.phase === 'bid' ? declareOptions(player).filter(option => option.pair).map(option => option.suit) : [], farmerScore: state.farmerScore, counts: state.hands.map(h => h.length), trick: state.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), played: state.played.slice(), shown: state.shown.map(p => ({ player: p.player, cards: p.cards.slice() })), voids: state.voids.map(v => v.slice()), bottom: player === state.dealer ? state.bottom.slice() : null, failed: state.failed.slice(), seed: state.seed + state.played.length * 1009 + player * 181, thinkMs: config.difficulty === 'deep' ? 1800 : config.difficulty === 'quick' ? 250 : 900, maxSamples: config.difficulty === 'deep' ? 96 : 48 };
+  }
+  function getWorker() {
+    if (!worker) {
+      const url = URL.createObjectURL(new Blob([$('worker-source').textContent], { type: 'text/javascript' }));
+      worker = new Worker(url); URL.revokeObjectURL(url);
+    }
+    return worker;
+  }
+  function askBot(player, kind, hint = false) {
+    if (busy) return;
+    busy = true; const serial = ++jobSerial, phase = state.phase, token = epoch;
+    const payload = kind === 'bury' ? { hand: state.hands[player].slice(), trump: state.trump, seed: state.seed } : makeView(player);
+    render();
+    const accept = answer => {
+      if (serial !== jobSerial || token !== epoch || phase !== state.phase) return;
+      busy = false;
+      if (kind === 'bid') {
+        if (answer.reverseSuit != null && declare(player, answer.reverseSuit, true)) return;
+        const amount = !state.bid ? state.bidBase : state.bid + 10 <= answer.limit ? state.bid + 10 : 0;
+        bid(player, amount); return;
+      }
+      const cards = answer.cards;
+      if (hint) {
+        selected = new Set(cards); lastHint = cards; render();
+      } else if (player !== 0 || state.auto) {
+        if (kind === 'bury') bury(player, cards); else play(player, cards);
+      } else render();
+    };
+    const fallback = () => {
+      if (serial !== jobSerial || token !== epoch) return;
+      try {
+        if (kind === 'bid') {
+          const limit = R.bidLimit(payload.hand, payload.trump);
+          const best = payload.reverseSuits.map(suit => ({ reverseSuit: suit, limit: R.bidLimit(payload.hand, suit) })).sort((a, b) => b.limit - a.limit)[0];
+          accept(best && best.limit >= 130 && (limit < (payload.bid ? payload.bid + 10 : payload.bidBase) || best.limit >= limit + 10) ? best : { limit }); return;
+        }
+        const cards = kind === 'bury' ? R.bury(payload.hand, payload.trump, R.seeded(payload.seed)) : R.legalMoves(payload.hand, payload.trick[0]?.cards || null, payload.trump, { unseen: globalThis.TractorBot.unknownCards(payload), random: R.seeded(payload.seed) })[0];
+        accept({ cards });
+      } catch (error) { busy = false; toast('思考中断，请重新选择出牌'); render(); }
+    };
+    try {
+      const activeWorker = getWorker();
+      activeWorker.onmessage = event => { if (event.data.id !== serial) return; event.data.error ? fallback() : accept(event.data.answer); };
+      activeWorker.onerror = () => { if (worker) worker.terminate(); worker = null; fallback(); };
+      activeWorker.postMessage({ id: serial, kind, payload });
+    } catch { fallback(); }
+  }
+  function pump() {
+    if (!state || testMode) return;
+    clearTimeout(timer); timer = null;
+    if (state.phase === 'deal' && !state.paused) schedule(() => dealOne(), Number(config.dealSpeed));
+    else if (state.phase === 'declare' && !state.paused) schedule(finishDealing, state.locked ? 1300 : 4500);
+    else if (state.phase === 'force' && (state.turn !== 0 || state.auto)) schedule(() => {
+      const options = declareOptions(state.turn).sort((a, b) => R.bidLimit(state.hands[state.turn], b.suit) - R.bidLimit(state.hands[state.turn], a.suit) || Number(b.pair) - Number(a.pair));
+      if (options[0]) declare(state.turn, options[0].suit, options[0].pair);
+    }, 650);
+    else if (state.phase === 'bid' && (state.turn !== 0 || state.auto) && !busy) schedule(() => askBot(state.turn, 'bid'), 550);
+    else if (state.phase === 'bury' && (state.dealer !== 0 || state.auto) && !busy) schedule(() => askBot(state.dealer, 'bury'), 500);
+    else if (state.phase === 'play' && (state.turn !== 0 || state.auto) && !busy) schedule(() => askBot(state.turn, 'play'), 430);
+    else if (state.phase === 'collect') schedule(collect, 1350);
+  }
+  function cardHTML(id, options = {}) {
+    const red = [1, 3].includes(R.suit(id)) || R.rank(id) === 16;
+    const joker = R.rank(id) >= 15;
+    const isTrump = state.trump >= 0 && R.group(id, state.trump) === 4;
+    const tag = options.played ? 'span' : 'button';
+    return `<${tag} class="card ${red ? 'red' : ''} ${joker ? 'joker' : ''} ${isTrump ? 'trump' : ''} ${selected.has(id) && !options.played ? 'selected' : ''} ${state.lastDealt?.id === id && !options.played ? 'new' : ''}" ${options.played ? '' : `type="button" data-card="${id}" aria-label="${R.label(id)}${isTrump ? '，主牌' : ''}" aria-pressed="${selected.has(id)}"`} style="--i:${options.index || 0}"><span class="corner"><span class="rank">${R.shortRank(id)}</span><span class="suit">${joker ? '' : R.SUITS[R.suit(id)]}</span></span><span class="pip">${joker ? icon('Crown') : R.SUITS[R.suit(id)]}</span><span class="lower">${joker ? '' : R.shortRank(id)}</span></${tag}>`;
+  }
+  function roleHTML(player) {
+    if (state.failed[player]) return '<span class="role failed">判负</span>';
+    if (state.dealer < 0) return '';
+    return player === state.dealer ? '<span class="role">庄</span>' : '<span class="role farmer">闲</span>';
+  }
+  function phaseName() { return { deal: '接牌中', declare: '定主', force: '逼庄', bid: '抢庄', bury: '埋底', play: '出牌', collect: '收牌', end: '本局结束' }[state.phase]; }
+  function renderTable() {
+    const plays = state.trick.length ? state.trick : state.phase === 'end' ? state.lastTrick?.plays || [] : [];
+    const winner = plays.length === 3 ? plays[R.winningIndex(plays, state.trump)].player : -1;
+    const declaration = ['deal', 'declare', 'force', 'bid', 'bury'].includes(state.phase) ? state.declaration : null;
+    const declaredCards = declaration ? `<div class="seat-declaration declaration-${declaration.player}" data-player="${declaration.player}"><div class="center-caption">${NAMES[declaration.player]} · ${declaration.kind}</div><div class="declared-trump" role="group" aria-label="${NAMES[declaration.player]}亮出的主牌">${declaration.cards.map(id => cardHTML(id, { played: true })).join('')}</div><div class="center-caption">${state.locked ? '主花色已锁定' : '可用对 3 反主'}</div></div>` : '';
+    const seats = [1, 2].map(p => {
+      const showing = declaration?.player === p;
+      return `<div class="seat seat-${p === 1 ? 'left' : 'right'} ${state.turn === p && !['end', 'collect', 'declare'].includes(state.phase) ? 'current' : ''}"><div class="avatar">${icon(p === 1 ? 'Bot' : 'BrainCircuit')}</div><div><div class="seat-name">${NAMES[p]}${roleHTML(p)}</div><div class="seat-meta">${state.hands[p].length} 张 · ${busy && state.turn === p ? '思考中' : state.phase === 'bid' && state.turn === p ? '叫分中' : '本地高手'}</div></div>${showing ? declaredCards : ''}</div>` + (showing ? '' : `<div class="mini-back-stack ${p === 1 ? 'left' : 'right'}">${Array.from({ length: Math.min(5, state.hands[p].length) }, () => '<span class="mini-back"></span>').join('')}</div>`);
+    }).join('');
+    const piles = [1, 2, 0].map(p => {
+      const move = plays.find(entry => entry.player === p);
+      const css = p === 0 ? 'self' : p === 1 ? 'left' : 'right';
+      if (!move) return `<div class="pile pile-${css}"></div>`;
+      const d = R.describe(move.cards, state.trump);
+      const width = $('table').clientWidth * (p === 0 ? .38 : .28);
+      const cardWidth = innerWidth <= 520 ? 37 : innerWidth <= 850 ? 44 : 52;
+      const step = Math.min(cardWidth - 12, Math.max(7, (width - cardWidth) / Math.max(1, move.cards.length - 1)));
+      return `<div class="pile pile-${css}"><div class="pile-label ${winner === p ? 'winner' : ''}">${winner === p ? '本轮领先 · ' : ''}${d ? R.typeName(d) : '跟牌'}${p === 0 ? ' · 你' : ''}</div><div class="played-cards ${move.cards.length > 3 ? 'many' : ''}" style="--pile-step:${step}px">${R.sortHand(move.cards, state.trump).map(id => cardHTML(id, { played: true })).join('')}</div></div>`;
+    }).join('');
+    let center = '';
+    if (['deal', 'declare', 'force'].includes(state.phase)) center = `<div class="center-caption">${state.first === 0 ? '你先接牌' : NAMES[state.first] + '先接牌'}</div><div class="deck-stack">♠</div><div class="deal-count">${state.dealt} / 99</div>`;
+    else if (state.phase === 'bid') center = `<div class="center-caption">当前叫分</div><div class="center-heading">${state.bid || '—'} 分</div><div class="trump-watermark">${R.SUITS[state.trump]}</div>`;
+    else if (state.phase === 'bury') center = `<div class="center-caption">${NAMES[state.dealer]}埋底中</div><div class="deck-stack">9</div>`;
+    else center = `<div class="center-caption">第 ${state.trickNo} 轮</div><div class="center-heading">${state.phase === 'end' ? '本局结束' : plays.length ? R.typeName(R.describe(plays[0].cards, state.trump)) : NAMES[state.turn] + '领牌'}</div><div class="trump-watermark">${R.SUITS[state.trump]}</div>`;
+    const pot = plays.reduce((sum, entry) => sum + R.points(entry.cards), 0);
+    $('table').innerHTML = seats + `<div class="center-stage">${center}</div>` + piles + (declaration?.player === 0 ? declaredCards : '') + (plays.length ? `<div class="trick-pot"><strong>${pot}</strong>本轮分数</div>` : '') + `<div class="turn-note">${state.dealer >= 0 ? NAMES[state.dealer] + '坐庄 · ' + state.bid + ' 分' : '主花色 ' + (state.trump < 0 ? '未定' : R.SUIT_NAMES[state.trump])}</div><div class="table-status">${icon('CircleDot')}${phaseName()}</div>`;
+  }
+  function renderDecision() {
+    let title = '', subtitle = '', actions = '';
+    const button = (action, text, name, cls = '', disabled = false) => `<button class="btn ${cls}" data-action="${action}" ${disabled ? 'disabled' : ''}>${icon(name)}${text}</button>`;
+    const declarationButtons = () => declareOptions(0).map(option => `<button class="declare-btn ${[1, 3].includes(option.suit) ? 'red' : ''}" data-declare="${option.suit}" data-pair="${option.pair}" title="${option.upgrade ? '加亮' : state.declarer >= 0 ? '反主' : '亮主'}${R.SUIT_NAMES[option.suit]}${option.pair ? '对 3' : '3'}${state.phase === 'bid' ? '，130 分重新竞价' : ''}" aria-label="${option.upgrade ? '加亮' : state.declarer >= 0 ? '反主' : '亮主'}${R.SUIT_NAMES[option.suit]}${option.pair ? '对 3' : '3'}${state.phase === 'bid' ? '，130 分重新竞价' : ''}">${R.SUITS[option.suit]}${option.pair ? '33' : '3'}${option.upgrade ? '<small>加亮锁主</small>' : state.phase === 'bid' ? '<small>反主 · 130</small>' : ''}</button>`).join('');
+    if (['deal', 'declare'].includes(state.phase)) {
+      title = state.phase === 'deal' ? state.paused ? '接牌已暂停' : '依次接牌' : state.locked ? '主花色已锁定' : '接牌完成';
+      subtitle = state.trump >= 0 ? `${NAMES[state.declarer]}定主 · ${R.SUIT_NAMES[state.trump]}${state.locked ? '' : state.declarer === 0 ? ' · 同花色对 3 可加亮锁主' : ' · 可以对 3 反主'}` : '等待亮主';
+      actions = declarationButtons() + button('pause', '', state.paused ? 'Play' : 'Pause') + button(state.phase === 'deal' ? 'fast-deal' : 'finish-deal', state.phase === 'deal' ? '接完' : '开始叫分', 'ChevronsRight', 'primary');
+    } else if (state.phase === 'force') {
+      title = `${NAMES[state.turn]}必须亮主`; subtitle = '保底 120 分';
+      actions = state.turn === 0 ? declarationButtons() : '<span class="thinking"><i></i><i></i><i></i></span>';
+    } else if (state.phase === 'bid') {
+      title = state.turn === 0 ? '轮到你叫分' : `${NAMES[state.turn]}叫分中`;
+      subtitle = (state.bid ? `${NAMES[state.bidder]}当前最高 · ${state.bid} 分` : `最低 ${state.bidBase} 分`) + (state.bidPassed[0] ? ' · 你已弃叫' : '');
+      if (state.turn === 0 && !state.auto) actions = declarationButtons() + `<input id="bid-input" class="bid-input" type="number" min="${state.bid ? state.bid + 10 : state.bidBase}" max="200" step="10" value="${state.bid ? state.bid + 10 : state.bidBase}" aria-label="叫分分数">${button('pass-bid', '弃叫', 'Minus', '', !state.bid)}${button('bid', '叫分', 'Gavel', 'primary')}`;
+    } else if (state.phase === 'bury') {
+      title = state.dealer === 0 ? '选择 9 张底牌' : `${NAMES[state.dealer]}埋底中`;
+      subtitle = state.dealer === 0 ? `已选 ${selected.size} / 9 张` : '等待庄家埋底';
+      if (state.dealer === 0 && !state.auto) actions = button('hint', busy ? '思考中' : '建议', 'Lightbulb', '', busy) + button('clear', '', 'RotateCcw', '', !selected.size) + button('bury', '埋底', 'ArrowDownToLine', 'primary', selected.size !== 9);
+    } else if (state.phase === 'play') {
+      title = state.turn === 0 ? state.auto ? '正在托管' : state.trick.length ? '轮到你跟牌' : '由你领牌' : `${NAMES[state.turn]}${busy ? '思考中' : '出牌中'}`;
+      subtitle = state.trick.length ? `${R.typeName(R.describe(state.trick[0].cards, state.trump))} · 跟 ${state.trick[0].cards.length} 张` : state.trickNo === 1 ? '庄家首攻' : '上一轮赢家领牌';
+      if (state.turn === 0 && !state.auto) actions = button('hint', busy ? '思考中' : '提示', 'Lightbulb', '', busy) + button('clear', '', 'RotateCcw', '', !selected.size) + button('play', '出牌', 'ArrowUpRight', 'primary', !selected.size);
+    } else if (state.phase === 'collect') { const winner = state.trick[R.winningIndex(state.trick, state.trump)].player; title = `${NAMES[winner]}赢得本轮`; subtitle = `${state.trick.reduce((n, p) => n + R.points(p.cards), 0)} 分`; }
+    else { title = state.outcome?.wins[0] ? '本局获胜' : '本局落败'; subtitle = state.failed[0] ? '甩牌失败，个人判负' : `闲家 ${state.farmerScore} 分 / ${state.bid === 200 ? '得分即破庄' : '门槛 ' + R.farmerTarget(state.bid) + ' 分'}`; actions = button('result', '结算', 'ListChecks') + button('next', '下一局', 'ArrowRight', 'primary'); }
+    if (state.auto && state.phase !== 'end') actions += button('auto', '取消托管', 'UserRound', 'gold');
+    $('decision-bar').innerHTML = `<div class="decision-copy" aria-live="polite"><strong>${title}</strong><small>${subtitle}</small></div><div class="actions ${['deal', 'declare', 'force', 'bid'].includes(state.phase) ? 'wide' : ''}">${actions}</div>`;
+  }
+  function renderHand() {
+    const cards = R.sortHand(state.hands[0], state.trump);
+    const editable = !state.auto && ((state.phase === 'play' && state.turn === 0) || (state.phase === 'bury' && state.dealer === 0));
+    $('hand-header').innerHTML = `<div class="hand-title">你的手牌 ${roleHTML(0)}<span class="hand-count">${cards.length} 张</span></div><div class="hand-tools"><span class="selected-count">${selected.size ? '已选 ' + selected.size + ' 张' : ''}</span><button class="icon-btn ${state.auto ? 'active' : ''}" data-action="auto" title="${state.auto ? '取消托管' : '托管'}" aria-label="${state.auto ? '取消托管' : '托管'}">${icon('Bot')}</button><button class="icon-btn" data-action="last" title="上一轮" aria-label="上一轮" ${!state.lastTrick ? 'disabled' : ''}>${icon('History')}</button><button class="icon-btn" data-action="bottom" title="查看底牌" aria-label="查看底牌" ${state.dealer !== 0 && state.phase !== 'end' ? 'disabled' : ''}>${icon('Layers')}</button></div>`;
+    if (!cards.length) $('hand').innerHTML = `<div class="hand-empty">${state.phase === 'end' ? '手牌已出完' : '等待接牌'}</div>`;
+    else {
+      const width = Math.max(230, $('hand').clientWidth);
+      const cardWidth = innerWidth <= 520 ? 49 : 65;
+      const maxPerRow = Math.max(1, Math.floor((width - cardWidth) / 23) + 1);
+      const rows = innerWidth <= 520 ? Math.ceil(cards.length / Math.min(14, maxPerRow)) : cards.length > 17 ? 2 : 1;
+      const split = Math.ceil(cards.length / rows);
+      $('hand').innerHTML = Array.from({ length: rows }, (_, row) => {
+        const list = cards.slice(row * split, (row + 1) * split);
+        const step = Math.min(innerWidth <= 520 ? 27 : 42, (width - cardWidth) / Math.max(1, list.length - 1));
+        return `<div class="hand-row" style="--step:${step}px;--row-width:${step * (list.length - 1) + cardWidth}px">${list.map((id, i) => cardHTML(id, { index: i })).join('')}</div>`;
+      }).join('');
+      $('hand').querySelectorAll('button').forEach(button => button.setAttribute('aria-disabled', String(!editable)));
+    }
+    const main = cards.filter(id => R.group(id, state.trump) === 4).length;
+    $('hand-footer').innerHTML = `<span>${state.trump >= 0 ? `主牌 ${main} 张 · 对子 ${R.pairs(cards).length} 对` : `硬主 ${cards.filter(R.hard).length} 张`}</span><span>${state.auto ? '托管中' : state.phase === 'end' ? '牌局已保存' : state.failed[0] ? '本局已判负' : `第 ${state.round} 局`}</span>`;
+  }
+  function render() {
+    if (!state) return;
+    $('auto-btn').innerHTML = icon(state.auto ? 'UserRound' : 'Bot'); $('auto-btn').classList.toggle('active', state.auto); $('auto-btn').title = state.auto ? '取消托管' : '托管';
+    const main = state.trump < 0 ? '未定' : R.SUITS[state.trump];
+    $('score-strip').innerHTML = `<div class="metric"><small>主花色</small><strong class="${[1, 3].includes(state.trump) ? 'red' : ''}">${main}</strong>${state.trump >= 0 ? `<span style="font-size:11px;margin-left:7px;color:#7d8b81">${R.SUIT_NAMES[state.trump]}</span>` : ''}</div><div class="divider"></div><div class="metric"><small>庄家叫分</small><strong>${state.bid || '—'}</strong></div><div class="metric"><small>闲家得分</small><strong>${state.farmerScore}<span class="goal-inline">/ ${state.bid ? R.farmerTarget(state.bid) : '—'}</span></strong></div><div class="round-counter"><strong>${String(state.round).padStart(2, '0')}</strong>局数</div>`;
+    renderTable(); renderDecision(); renderHand();
+    const goal = state.bid ? R.farmerTarget(state.bid) : 80;
+    $('sidebar').innerHTML = `<div class="side-title">闲家得分<span>${state.dealer < 0 ? '等待抢庄' : NAMES[state.dealer] + '坐庄'}</span></div><div class="score-goal"><strong>${state.farmerScore}</strong><span>/ ${goal} 分</span></div><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, state.farmerScore / goal * 100)}%"></div></div><div class="progress-meta"><span>0</span><span>${goal} 分破庄</span></div><div class="score-rows"><div class="score-row"><span><i class="mini-dot gold"></i>庄家得分</span><b>${state.dealerScore}</b></div><div class="score-row"><span><i class="mini-dot"></i>底牌</span><b>${state.phase === 'end' ? R.points(state.bottom) + ' 分' : '9 张'}</b></div></div><div class="side-separator"></div><div class="side-title">牌局动态<span>第 ${state.trickNo} 轮</span></div><div class="side-log">${state.logs.slice(0, 10).map((entry, i) => `<div class="log-item ${i === 0 ? 'latest' : ''}">${esc(entry.text)}</div>`).join('')}</div><div class="side-bottom"><button class="btn" data-action="history">${icon('History')}完整记录</button><button class="btn" data-action="last" ${!state.lastTrick ? 'disabled' : ''}>${icon('Layers')}上一轮</button></div><div class="side-separator"></div><div class="side-title">本机战绩<span>${stats.games} 局</span></div><div class="summary-stat"><span>获胜 ${stats.wins} 局</span><span>胜率 ${stats.games ? Math.round(stats.wins / stats.games * 100) : 0}%</span></div><div class="summary-stat"><span>坐庄 ${stats.dealerGames} 局</span><span>守庄 ${stats.dealerWins} 局</span></div><div class="game-version">三人拖拉机 · 离线版</div>`;
+  }
+  function modal(title, body, footer = '') {
+    $('modal-title').textContent = title; $('modal-body').innerHTML = body;
+    $('modal-footer').innerHTML = footer || '<button class="btn primary" data-action="close-modal">关闭</button>';
+    if (!$('modal').open) $('modal').showModal();
+  }
+  function showResult() {
+    modal('本局结算', `<div class="result-heading"><div class="result-icon">${icon(state.outcome.wins[0] ? 'Trophy' : 'Flag')}</div><h3>${state.outcome.wins[0] ? '你赢了' : '本局落败'}</h3><p>庄家叫 ${state.bid} 分 · 闲家获得 ${state.farmerScore} 分</p></div><div class="result-players">${[0, 1, 2].map(p => `<div class="result-player"><span>${NAMES[p]} ${p === state.dealer ? '· 庄家' : '· 闲家'}</span><span class="${state.outcome.wins[p] ? 'win' : 'loss'}">${state.failed[p] ? '甩牌失败 · 判负' : state.outcome.wins[p] ? '胜' : '负'}</span></div>`).join('')}</div><p class="bottom-caption">底牌 ${R.points(state.bottom)} 分 · ${state.captured ? '闲家抠底' : '未抠底'}</p><div class="bottom-cards">${state.bottom.map(id => cardHTML(id, { played: true })).join('')}</div>`, '<button class="btn" data-action="history">牌局记录</button><button class="btn primary" data-action="next">下一局</button>');
+  }
+  function showHistory(lastOnly = false) {
+    const entries = lastOnly ? state.lastTrick ? [state.lastTrick] : [] : state.history.slice().reverse();
+    let html = entries.map(entry => `<div class="history-entry"><strong>第 ${entry.number} 轮 · ${NAMES[entry.winner]}赢牌 · ${entry.points} 分</strong>${entry.plays.map(p => `<p>${NAMES[p.player]}：${p.cards.map(id => `<span class="${[1, 3].includes(R.suit(id)) || R.rank(id) === 16 ? 'red' : ''}">${R.label(id)}</span>`).join(' ')}</p>`).join('')}</div>`).join('');
+    if (!lastOnly) html += `<div class="history-entry"><strong>接牌与叫分记录</strong>${state.logs.filter(entry => !entry.text.includes('出 ') && !entry.text.includes('收下')).slice().reverse().map(entry => `<p>${esc(entry.text)}</p>`).join('')}</div>`;
+    modal(lastOnly ? '上一轮' : '牌局记录', html || '<p>暂无已完成的轮次</p>');
+  }
+  function showRules() {
+    modal('牌桌规则', `<ol class="rules-list">
+      <li>两副牌 108 张，每人 33 张，底牌 9 张。每局重新洗牌。庄家拿底后埋 9 张。庄家首攻，之后每轮赢家收分并领出下一轮。</li>
+      <li>亮 3 定主，对 3 可反其他玩家的单 3；不能自己用异花色对 3 改主，只反一次。接牌期间可直接亮对 3，立即锁主。</li>
+      <li>接牌阶段自己亮过单 3 后，又接到同花色第二张 3，可以<b>加亮同花色对 3 并锁主</b>。主花色不变，仍按普通 120 分起叫，不触发反主重置；竞价阶段不能自行加亮。</li>
+      <li>手持异花色对 3 可延迟到自己的竞价回合反其他玩家的主：<b>旧报价作废，由反主者以 130 分重新竞价，全部玩家恢复报价资格，主花色锁定。</b>接牌阶段反主，竞价起始分也为 130。</li>
+      <li>每局无人亮主时，从首位接牌者依次逼庄，有 3 必须亮主并保底 120 分；其他人仍可加价抢庄。逼庄单 3 仍可在竞价回合被对 3 反主。三人都没有 3 时重发。</li>
+      <li>普通竞价最低 120，反主后最低 130，最高 200，每次至少加 10，且为 10 的倍数。弃叫者退出当前这一轮竞价，不能重新加价；反主重开竞价时恢复资格。仅剩一人或叫到 200 时结束。</li>
+      <li>大王 ＞ 小王 ＞ 主花色3 ＞ 非主花色3 ＞ 主花色2 ＞ 非主花色2 ＞ 主花色A至4。单牌、对子均按此排序。<b>所有 2、3 都按硬主补牌。</b></li>
+      <li>对子限同花同点。两对及以上连续对子组成拖拉机，按上述新牌序连接。同级牌先出者大。</li>
+      <li>跟牌张数与首家一致。对子、拖拉机先跟同花色对子，不强制跟成拖拉机；花色不足补主，主不足才垫其他副牌。</li>
+      <li>补主先出对子，主对子可自由选择；剩余单牌必须先从大到小出硬主，再任选其他软主。</li>
+      <li>副牌甩牌按单牌处理。同花色不足时补任意主牌，没有对子或硬主优先。其他人持有大于甩牌最小牌的同花色牌，则甩牌失败。</li>
+      <li><b>甩牌失败者个人当局判负，不罚分；另一名闲家不受影响。</b>失败后改出最小一张，继续打完本局。</li>
+      <li>同花色不足而夹带主牌不能管上；完全缺门才可能以全部主牌管上，且须满足对子或拖拉机结构。</li>
+      <li>副牌单牌缺门可以自由出牌；主牌单牌有主必须跟主。</li>
+      <li>5 为 5 分，10、K 为 10 分。报 120 时闲家拿到 80 即庄家输；120 至 190 按 200 减报价计算门槛。<b>报 200 须守满 200 分，闲家得分为 0 才守庄成功。</b></li>
+      <li>末轮闲家以合法主牌大于庄家，则取得底牌分数，不翻倍；其余情况不抠底，底分归庄家。</li>
+    </ol>`);
+  }
+  function showSettings() {
+    const select = (key, choices) => `<select name="${key}">${choices.map(([value, text]) => `<option value="${value}" ${String(config[key]) === String(value) ? 'selected' : ''}>${text}</option>`).join('')}</select>`;
+    modal('牌桌设置', `<form id="settings-form"><div class="setting-row"><label>机器人思考</label>${select('difficulty', [['quick', '迅速'], ['expert', '专家'], ['deep', '深思']])}</div><div class="setting-row"><label for="speed">接牌间隔</label><input id="speed" name="dealSpeed" type="range" min="70" max="450" step="10" value="${config.dealSpeed}" aria-label="接牌间隔"></div></form>`, '<button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-action="save-settings">保存设置</button>');
+  }
+  document.addEventListener('click', event => {
+    const card = event.target.closest('[data-card]');
+    if (card) {
+      const editable = !state.auto && ((state.phase === 'play' && state.turn === 0) || (state.phase === 'bury' && state.dealer === 0));
+      if (!editable) return;
+      const id = Number(card.dataset.card);
+      if (selected.has(id)) selected.delete(id); else selected.add(id);
+      renderHand(); renderDecision(); return;
+    }
+    const declaration = event.target.closest('[data-declare]');
+    if (declaration && !state.auto) { declare(0, Number(declaration.dataset.declare), declaration.dataset.pair === 'true'); return; }
+    const button = event.target.closest('[data-action]');
+    if (!button || button.disabled) return;
+    const action = button.dataset.action;
+    if (action === 'pause') { state.paused = !state.paused; save(); render(); pump(); }
+    else if (action === 'fast-deal') { clearTimeout(timer); while (state.phase === 'deal') dealOne(true); render(); save(); pump(); }
+    else if (action === 'finish-deal') finishDealing();
+    else if (action === 'bid') { if (!bid(0, Number($('bid-input')?.value))) toast('报价须为 10 的倍数，高于当前报价，最高 200 分；弃叫后不能再加'); }
+    else if (action === 'pass-bid') bid(0, 0);
+    else if (action === 'bury') bury(0, [...selected]);
+    else if (action === 'play') play(0, [...selected]);
+    else if (action === 'clear') { selected.clear(); renderHand(); renderDecision(); }
+    else if (action === 'hint') askBot(0, state.phase === 'bury' ? 'bury' : 'play', true);
+    else if (action === 'auto') { state.auto = !state.auto; selected.clear(); if (!state.auto) { jobSerial++; busy = false; } state.paused = false; save(); render(); pump(); }
+    else if (action === 'rules') showRules();
+    else if (action === 'settings') showSettings();
+    else if (action === 'save-settings') {
+      const form = $('settings-form');
+      config = { dealSpeed: Number(form.elements.dealSpeed.value), difficulty: form.elements.difficulty.value };
+      write('tractor-config-v1', config); $('modal').close(); toast('设置已保存'); pump();
+    } else if (action === 'history') showHistory();
+    else if (action === 'last') showHistory(true);
+    else if (action === 'bottom') { if (state.dealer === 0 || state.phase === 'end') modal('底牌', `<div class="bottom-cards">${state.bottom.map(id => cardHTML(id, { played: true })).join('')}</div><p class="bottom-caption">${R.points(state.bottom)} 分</p>`); }
+    else if (action === 'restart') modal('重新开局', '<p>结束当前牌局，重新随机决定首家接牌者。</p>', '<button class="btn" data-action="close-modal">取消</button><button class="btn primary" data-action="confirm-restart">重新开局</button>');
+    else if (action === 'confirm-restart') newRound(true);
+    else if (action === 'next') newRound(false);
+    else if (action === 'result') showResult();
+    else if (action === 'close-modal') $('modal').close();
+  });
+  document.addEventListener('dblclick', event => {
+    const card = event.target.closest('[data-card]');
+    if (!card || state.auto || state.phase !== 'play' || state.turn !== 0) return;
+    const id = Number(card.dataset.card), copies = state.hands[0].filter(x => R.face(x) === R.face(id));
+    copies.forEach(x => selected.add(x)); renderHand(); renderDecision();
+  });
+  let resizeTimer;
+  addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 80); });
+  addEventListener('beforeunload', save);
+  $('rules-icon').innerHTML = icon('BookOpen'); $('settings-icon').innerHTML = icon('Settings'); $('restart-icon').innerHTML = icon('RotateCcw'); $('history-icon').innerHTML = icon('History'); $('close-icon').innerHTML = icon('X');
+  globalThis.TractorGame = { get state() { return state; }, makeView, play, bid, bury, declare, dealOne, finishDealing, collect, newRound, render, setState(value) { cancelWork(); state = value; selected.clear(); render(); save(); pump(); }, select(ids) { selected = new Set(ids); render(); } };
+  if (!state) { newRound(true); if (previousRulesSave) toast('规则已更新，重新接牌；累计战绩已保留'); } else { render(); pump(); }
+})();
+</script>
+</body>
+</html>

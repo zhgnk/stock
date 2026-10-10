@@ -119,21 +119,22 @@ const Rules = (() => {
     for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
     return result;
   }
-  function describe(cards, trump) {
+  function describe(cards, trump, asThrow = false) {
+    if (!Array.isArray(cards)) { asThrow = asThrow || Boolean(cards?.throw); cards = cards?.cards || []; }
     if (!cards.length) return null;
     const g = group(cards[0], trump);
     if (!cards.every(id => group(id, trump) === g)) return null;
     const n = cards.length;
     const max = Math.max(...cards.map(id => level(id, trump)));
     if (n === 1) return { type: 'single', n, group: g, max };
+    if (asThrow) return { type: 'throw', n, group: g, max };
     const ps = pairs(cards);
     if (n === 2 && ps.length === 1) return { type: 'pair', n, group: g, max };
     if (n >= 4 && n % 2 === 0 && ps.length * 2 === n) {
       const levels = ps.map(p => level(p[0], trump)).sort((a, b) => a - b);
       if (levels.every((v, i) => !i || v === levels[i - 1] + 1)) return { type: 'tractor', n, group: g, max };
     }
-    if (g !== 4 && ps.length === 0) return { type: 'throw', n, group: g, max };
-    return null;
+    return { type: 'throw', n, group: g, max };
   }
   const typeName = d => !d ? '未成牌型' : d.type === 'single' ? '单牌' : d.type === 'pair' ? '对子' : d.type === 'throw' ? `甩牌 · ${d.n} 张` : `${d.n / 2} 对拖拉机`;
   function mainSelectionError(pool, chosen, n, trump) {
@@ -151,7 +152,7 @@ const Rules = (() => {
   function validate(hand, cards, lead, trump) {
     if (!cards.length) return '请先选牌';
     if (new Set(cards).size !== cards.length || cards.some(id => !hand.includes(id))) return '所选牌不在手中';
-    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子或同花色的不同单牌';
+    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子，或同一花色、同一主牌组的甩牌';
     const d = describe(lead, trump);
     if (!d) return '首家牌型无效';
     if (cards.length !== d.n) return `本轮需要跟 ${d.n} 张牌`;
@@ -186,11 +187,11 @@ const Rules = (() => {
   }
   function winningIndex(plays, trump) {
     let best = 0;
-    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0].cards, trump) > strength(plays[best].cards, plays[0].cards, trump)) best = i;
+    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0], trump) > strength(plays[best].cards, plays[0], trump)) best = i;
     return best;
   }
-  function throwFailure(cards, hands, player, trump) {
-    const d = describe(cards, trump);
+  function throwFailure(cards, hands, player, trump, asThrow = false) {
+    const d = describe(cards, trump, asThrow);
     if (d?.type !== 'throw') return false;
     const min = Math.min(...cards.map(id => level(id, trump)));
     return hands.some((hand, p) => p !== player && hand.some(id => group(id, trump) === d.group && level(id, trump) > min));
@@ -222,10 +223,11 @@ const Rules = (() => {
         });
       };
       groupPairs.forEach(p => extend(p, level(p[0], trump) + 1));
-      if (allowThrow && g < 4) {
+      if (allowThrow) {
         const unknownMax = Math.max(0, ...unseen.filter(id => group(id, trump) === g).map(id => level(id, trump)));
         const safe = hand.filter(id => group(id, trump) === g && level(id, trump) >= unknownMax).sort(byPower(trump));
         const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
+        if (safe.length >= 2 && describe(safe, trump).type === 'throw') moves.push(safe);
         if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
       }
     }
@@ -259,6 +261,32 @@ const Rules = (() => {
     const structured = d.type !== 'throw';
     const results = new Map();
     const add = move => { if (!validate(hand, move, lead, trump)) results.set(move.slice().sort((a, b) => a - b).join(','), move); };
+    if (options.enumerate) {
+      const main = d.group === 4 ? [] : hand.filter(id => group(id, trump) === 4);
+      const nMain = Math.min(d.n - nSame, main.length);
+      const other = hand.filter(id => group(id, trump) !== d.group && group(id, trump) !== 4);
+      const parts = [{ pool, n: nSame }, { pool: main, n: nMain }, { pool: other, n: d.n - nSame - nMain }];
+      let combinations = 1;
+      for (const part of parts) {
+        const k = Math.min(part.n, part.pool.length - part.n);
+        for (let i = 1; i <= k; i++) combinations *= (part.pool.length - i + 1) / i;
+      }
+      // Enumerate manageable follow choices by required group counts. This
+      // includes preserving or splitting structures without relying on luck.
+      if (combinations <= options.enumerate + 1e-6) {
+        const enumerate = (part, start, need, selected) => {
+          if (!need) {
+            if (part === parts.length - 1) add(selected);
+            else enumerate(part + 1, 0, parts[part + 1].n, selected);
+            return;
+          }
+          const cards = parts[part].pool;
+          for (let i = start; i <= cards.length - need; i++) enumerate(part, i + 1, need - 1, [...selected, cards[i]]);
+        };
+        enumerate(0, 0, nSame, []);
+        return [...results.values()];
+      }
+    }
     for (let mode = 0; mode < (options.samples || 20); mode++) {
       let chosen = pick(pool, nSame, structured, structured && d.group === 4, trump, mode, random);
       let n = d.n - chosen.length;
@@ -378,17 +406,93 @@ const Bot = (() => {
     }
     return null;
   }
-  function prior(hand, cards, trick, player, dealer, trump, unseen) {
-    const lead = trick.length ? trick[0].cards : null;
+  // Shared by move ordering and tactical conservation: a pair and its tractor links
+  // have separate value, and initiative matters only when the remaining hand can use it.
+  function handProfile(hand, trump, unseen = null, rivals = null) {
+    // In a sampled deal only the opposing side can take our control away.
+    // Partner cards and the buried cards must not act as phantom opponents.
+    if (rivals) unseen = rivals.flat();
+    const pairs = R.pairs(hand), paired = new Set(pairs.flat());
+    const levels = Array.from({ length: 5 }, () => new Set());
+    for (const pair of pairs) levels[R.group(pair[0], trump)].add(R.level(pair[0], trump));
+    let links = 0, initiative = 0;
+    for (const group of levels) for (const level of group) if (group.has(level + 1)) links++;
+    if (unseen) {
+      const rivalPairs = rivals ? rivals.flatMap(R.pairs) : R.pairs(unseen);
+      const mainThreat = unseen.some(id => R.group(id, trump) === 4);
+      for (let g = 0; g <= 4; g++) {
+        const own = hand.filter(id => R.group(id, trump) === g);
+        if (!own.length) continue;
+        const rivals = unseen.filter(id => R.group(id, trump) === g);
+        const high = Math.max(0, ...rivals.map(id => R.level(id, trump)));
+        const factor = g === 4 || !mainThreat ? 1 : 0.65;
+        const topSingles = own.filter(id => !paired.has(id) && R.level(id, trump) >= high).length;
+        initiative += topSingles * 2.5 * factor;
+        const powers = new Map();
+        for (const pair of pairs.filter(p => R.group(p[0], trump) === g)) {
+          const level = R.level(pair[0], trump);
+          const threats = rivalPairs.filter(p => R.group(p[0], trump) === g && R.level(p[0], trump) > level).length;
+          const power = 1 / (1 + threats);
+          powers.set(level, power);
+          initiative += 4 * power * factor;
+        }
+        for (const [level, power] of powers) if (powers.has(level + 1)) initiative += 5 * Math.min(power, powers.get(level + 1)) * factor;
+        if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
+      }
+    }
+    return { pairs: pairs.length, links, initiative: Math.min(30, initiative) };
+  }
+  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
+    if (!trick.length || player === dealer) return null;
+    const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
+    if (winner.player === dealer) return null;
+    const power = R.strength(winner.cards, lead, trump);
+    let ceiling = -1;
+    if (!trick.some(entry => entry.player === dealer)) {
+      if (dealerHand) {
+        // Only a hypothetical sampled hand is supplied here, never the live deal.
+        ceiling = Math.max(-1, ...R.legalMoves(dealerHand, lead, trump, { samples: 4 }).map(cards => R.strength(cards, lead, trump)));
+      } else if (!unseen) ceiling = 120;
+      else {
+        // Public information cannot tell us which opponent holds an unseen card.
+        // Consider both following suit and a possible trump cut conservatively.
+        const description = R.describe(lead, trump);
+        for (const group of new Set([description.group, 4])) {
+          const pool = unseen.filter(id => R.group(id, trump) === group);
+          if (pool.length < description.n) continue;
+          if (description.type === 'single' || description.type === 'throw') {
+            ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...pool.map(id => R.level(id, trump))));
+          } else {
+            const moves = description.type === 'pair' ? R.pairs(pool) : R.leadMoves(pool, trump, [], false).filter(cards => cards.length === description.n);
+            ceiling = Math.max(ceiling, ...moves.map(cards => R.strength(cards, lead, trump)));
+          }
+        }
+      }
+    }
+    return { winner: winner.player, power, ceiling, safe: power >= ceiling };
+  }
+  function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
+    const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
+    const lead = trick[0] || null;
     const description = R.describe(cards, trump);
-    const beforePairs = R.pairs(hand).length;
     const after = R.remove(hand, cards);
-    const broken = beforePairs - R.pairs(after).length - R.pairs(cards).length;
+    const beforeProfile = handProfile(hand, trump, lead ? unseen : null, lead ? rivals : null), afterProfile = handProfile(after, trump, lead ? unseen : null, lead ? rivals : null), playedProfile = handProfile(cards, trump);
+    const broken = beforeProfile.pairs - afterProfile.pairs - playedProfile.pairs;
+    const brokenLinks = Math.max(0, beforeProfile.links - afterProfile.links - playedProfile.links);
     const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
-    let score = cards.length * 1.3 - cost - broken * 5;
+    let score = cards.length * 1.3 - cost - broken * 5 - brokenLinks * 6;
     if (!lead) {
-      const g = R.group(cards[0], trump), max = Math.max(...cards.map(id => R.level(id, trump)));
-      const threats = unseen.filter(id => R.group(id, trump) === g && R.level(id, trump) > max).length;
+      const g = R.group(cards[0], trump), power = R.strength(cards, cards, trump);
+      // A higher single cannot beat a pair or tractor. In a sampled position,
+      // inspect each opponent separately so split copies cannot form a phantom pair.
+      const threats = (rivals || [unseen]).reduce((count, rival) => {
+        const same = rival.filter(id => R.group(id, trump) === g);
+        const pool = same.length >= cards.length ? same : same.length ? [] : rival.filter(id => R.group(id, trump) === 4);
+        if (pool.length < cards.length) return count;
+        if (description.type === 'pair') return count + R.pairs(pool).filter(pair => R.strength(pair, cards, trump) > power).length;
+        if (description.type === 'tractor') return count + R.leadMoves(pool, trump, [], false).filter(move => move.length === cards.length && R.strength(move, cards, trump) > power).length;
+        return count + pool.filter(id => (R.group(id, trump) === 4 ? 100 : 0) + R.level(id, trump) > power).length;
+      }, 0);
       score += threats === 0 ? 13 : -Math.min(12, threats * 1.6);
       if (description?.type === 'pair') score += 4;
       if (description?.type === 'tractor') score += cards.length * 3;
@@ -399,14 +503,20 @@ const Bot = (() => {
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
     } else {
+      score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
       const current = trick[R.winningIndex(trick, trump)];
-      const wins = R.strength(cards, lead, trump) > R.strength(current.cards, lead, trump);
+      const movePower = R.strength(cards, lead, trump);
+      const wins = movePower > R.strength(current.cards, lead, trump);
       const friendly = sameTeam(player, current.player, dealer);
       const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
-      if (wins) score += (friendly ? 0 : 10 + pot * 0.8) - (friendly && trick.length === 2 ? 7 : 0);
-      const safeFriendly = friendly && (trick.length === 2 || R.strength(current.cards, lead, trump) >= 120);
-      score += R.points(cards) * ((wins || safeFriendly) ? 0.7 : -0.85);
-      if (!wins && !friendly) score -= 4;
+      // Taking points and taking the lead are distinct benefits. Evaluate control
+      // after this move, so spending the last key card cannot earn a phantom bonus.
+      const teamHolds = support && Math.max(support.power, movePower) >= support.ceiling;
+      if (wins) score += friendly
+        ? (!support.safe && teamHolds ? 14 + pot * 1.5 : support.safe ? -7 : 0)
+        : 14 + pot * 1.5 + afterProfile.initiative * 1.2;
+      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins ? 0.7 : -0.85);
+      if (!wins && !friendly) score -= 4 + pot * 0.5;
     }
     return score;
   }
@@ -424,57 +534,58 @@ const Bot = (() => {
     sim.completed++;
     return done;
   }
-  function tacticalMoves(hand, moves, trick, player, dealer, trump) {
-    // Keep every endgame move for exact search: the final trump and bottom may matter more.
-    if (hand.length <= 6 || !trick.length || trick[0].cards.length !== 1) return moves;
-    const lead = trick[0].cards, winner = trick[R.winningIndex(trick, trump)];
+  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump)) {
+    if (!trick.length || !moves.length) return moves;
+    const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     const strength = R.strength(winner.cards, lead, trump);
-    const canWin = moves.some(cards => R.strength(cards, lead, trump) > strength);
-    if (canWin || (strength < 120 && trick.length !== 2)) return moves;
-    // The winning side is settled. Feed a safe partner; withhold points from the dealer.
+    const winning = moves.filter(cards => R.strength(cards, lead, trump) > strength);
+    const losing = moves.filter(cards => R.strength(cards, lead, trump) <= strength);
+    if (!losing.length) return moves;
     const friendly = sameTeam(player, winner.player, dealer);
-    const pointLimit = friendly ? Math.max(...moves.map(R.points)) : Math.min(...moves.map(R.points));
-    const economical = moves.filter(cards => R.points(cards) === pointLimit);
-    const paired = new Set(R.pairs(hand).flat());
-    const cost = cards => R.level(cards[0], trump) + (paired.has(cards[0]) ? 3 : 0);
+    // Both sides conserve points and control when beaten. Feed only an already-safe teammate.
+    const safePartner = friendly && support.safe;
+    const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
+    const economical = losing.filter(cards => R.points(cards) === pointLimit);
+    // When we can contest the trick, compare every minimum-point concession with
+    // every winning move. A slightly larger loser may preserve a valuable tractor.
+    if (!safePartner && winning.length) return [...winning, ...economical];
+    const before = handProfile(hand, trump);
+    const cost = cards => {
+      const after = handProfile(R.remove(hand, cards), trump), played = handProfile(cards, trump);
+      return cards.reduce((sum, id) => sum + R.level(id, trump), 0)
+        + (before.pairs - after.pairs - played.pairs) * 3 + Math.max(0, before.links - after.links - played.links) * 6;
+    };
     const minimum = Math.min(...economical.map(cost));
-    return economical.filter(cards => cost(cards) === minimum);
+    return [...(safePartner ? [] : winning), ...economical.filter(cards => cost(cards) === minimum)];
   }
   function rolloutPick(sim, random) {
     const hand = sim.hands[sim.turn];
-    const lead = sim.trick[0]?.cards || null;
+    const lead = sim.trick[0] || null;
     const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
-    const moves = tacticalMoves(hand, R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen, allowThrow: false }), sim.trick, sim.turn, sim.dealer, sim.trump);
+    const rivals = sim.hands.filter((hand, player) => !sameTeam(sim.turn, player, sim.dealer));
+    const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
+    const available = R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    // Simulations must also consider conceding points to preserve a decisive
+    // pair or tractor. Economical defaults are tie-breaks, never a move filter.
+    const moves = available;
+    const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen);
-      if (!lead) {
-        const rivals = sim.hands.flatMap((h, p) => sameTeam(sim.turn, p, sim.dealer) ? [] : h);
-        const g = R.group(move[0], sim.trump);
-        if (g !== 4 && rivals.filter(id => R.group(id, sim.trump) === g).length === 0) score -= 8;
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support });
+      if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
+        const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
+        score += (ownControl - partnerControl) * 1.2;
       }
       score += (random() - .5) * 1.5;
       if (score > bestScore) { bestScore = score; best = move; }
     }
     return best;
   }
-  function leafValue(sim, view) {
+  function terminalValue(sim, view) {
     const sign = view.player === view.dealer ? -1 : 1;
-    const threshold = R.farmerTarget(view.bid);
-    if (sim.hands.every(hand => hand.length === 0)) {
-      const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
-      const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
-      return (win ? 850 : -850) + sign * sim.farmerScore;
-    }
-    let score = sign * (sim.farmerScore - view.farmerScore) * 4.5;
-    if (sim.farmerScore >= threshold) score += sign * 150;
-    score += sameTeam(sim.turn, view.player, view.dealer) ? 6 : -6;
-    sim.hands.forEach((hand, p) => {
-      let control = hand.reduce((sum, id) => sum + (R.group(id, view.trump) === 4 ? 1.2 + Math.max(0, R.level(id, view.trump) - 14) * 1.1 : R.rank(id) === 14 ? 2.8 : 0), 0);
-      control += R.pairs(hand).reduce((sum, pair) => sum + (R.group(pair[0], view.trump) === 4 ? 3.5 : 1.7), 0);
-      score += control * (sameTeam(p, view.player, view.dealer) ? 1 : -1);
-    });
-    return score;
+    const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
+    const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
+    return (win ? 850 : -850) + sign * sim.farmerScore;
   }
   function smallMoves(hand, lead, trump, unseen) {
     const moves = new Map();
@@ -494,22 +605,24 @@ const Bot = (() => {
   function endgame(sim, view, search, alpha = -Infinity, beta = Infinity) {
     search.nodes++;
     if (search.nodes % 32 === 1 && (performance.now() >= search.deadline || search.nodes > 150000)) throw searchExpired;
-    if (sim.hands.every(hand => !hand.length)) return leafValue(sim, view);
-    const key = sim.hands.map(hand => hand.map(R.face).sort((a, b) => a - b).join(',')).join('/') + ':' + sim.turn + ':' + sim.farmerScore + ':' + sim.trick.map(p => p.player + '=' + p.cards.map(R.face).sort((a, b) => a - b).join(',')).join('/');
+    if (sim.hands.every(hand => !hand.length)) return terminalValue(sim, view);
+    const key = sim.hands.map(hand => hand.map(R.face).sort((a, b) => a - b).join(',')).join('/') + ':' + sim.turn + ':' + sim.farmerScore + ':' + sim.trick.map(p => p.player + '=' + (p.throw ? 'throw:' : '') + p.cards.map(R.face).sort((a, b) => a - b).join(',')).join('/');
     const originalAlpha = alpha, originalBeta = beta, cached = search.cache.get(key);
     if (cached) {
       if (cached.flag === 'exact') return cached.value;
       if (cached.flag === 'lower') alpha = Math.max(alpha, cached.value); else beta = Math.min(beta, cached.value);
       if (alpha >= beta) return cached.value;
     }
-    const player = sim.turn, hand = sim.hands[player], lead = sim.trick[0]?.cards || null;
+    const player = sim.turn, hand = sim.hands[player], lead = sim.trick[0] || null;
     const unseen = sim.hands.flatMap((cards, p) => p === player ? [] : cards);
-    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen) })).sort((a, b) => b.prior - a.prior);
+    const rivals = sim.hands.filter((cards, p) => !sameTeam(player, p, sim.dealer));
+    const support = farmerSupport(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
+    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support }) })).sort((a, b) => b.prior - a.prior);
     if (!moves.length) throw new Error('残局没有合法出牌');
     const maximize = sameTeam(player, view.player, view.dealer);
     let value = maximize ? -Infinity : Infinity;
     for (const move of moves) {
-      const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(p => ({ player: p.player, cards: p.cards.slice() })) };
+      const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(p => ({ ...p, cards: p.cards.slice() })) };
       advance(next, player, move.cards);
       const result = endgame(next, view, search, alpha, beta);
       value = maximize ? Math.max(value, result) : Math.min(value, result);
@@ -519,38 +632,42 @@ const Bot = (() => {
     search.cache.set(key, { value, flag: value <= originalAlpha ? 'upper' : value >= originalBeta ? 'lower' : 'exact' });
     return value;
   }
+  function winBounds(wins, samples) {
+    const rate = wins / samples, z2 = 3.8416, divisor = 1 + z2 / samples;
+    const center = (rate + z2 / (2 * samples)) / divisor;
+    const radius = 1.96 * Math.sqrt(rate * (1 - rate) / samples + z2 / (4 * samples ** 2)) / divisor;
+    return { lower: Math.min(rate, Math.max(0, center - radius)), upper: Math.max(rate, Math.min(1, center + radius)) };
+  }
   function choose(view) {
     const started = performance.now();
     const random = R.seeded(view.seed);
     const unseen = unknownCards(view);
-    const lead = view.trick[0]?.cards || null;
-    const candidates = tacticalMoves(view.hand, view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, unseen }), view.trick, view.player, view.dealer, view.trump);
+    const lead = view.trick[0] || null;
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen });
+    const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
+    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
+    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support);
+    const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
-    let ranked = candidates.map(cards => ({ cards, prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen), total: 0, squared: 0, visits: 0 })).sort((a, b) => b.prior - a.prior);
-    if (view.hand.length > 7) {
-      const count = Math.min(40, Math.max(8, Math.floor(limit / 100))), selected = ranked.slice(0, count), structures = new Set();
-      for (const candidate of ranked) {
-        const d = R.describe(candidate.cards, view.trump), group = R.group(candidate.cards[0], view.trump);
-        const structure = `${group}:${d?.type || 'mixed'}:${candidate.cards.length}`;
-        if (!structures.has(structure)) { if (!selected.includes(candidate)) selected.push(candidate); structures.add(structure); }
-      }
-      ranked = selected;
-    }
-    if (ranked.length === 1) return { cards: ranked[0].cards, samples: 0, elapsed: performance.now() - started };
-    const depth = view.hand.length <= 9 ? 18 : view.hand.length <= 18 ? 12 : 8;
+    // Priors order the work and break outcome ties; they never replace a simulation.
+    // Every generated, distinct candidate receives the same first hidden-hand sample.
+    const ranked = candidates.map(cards => ({ cards, preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support }), wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity })).sort((a, b) => b.prior - a.prior);
     let active = ranked.slice(), samples = 0, exactSamples = 0, nodes = 0;
-    while (samples < (view.maxSamples || 512) && performance.now() < deadline) {
+    // Finish at least one complete paired batch even if a slow device exceeds
+    // the soft time budget. Forced moves also receive an actual win estimate.
+    while (samples < (view.maxSamples || 512) && (!samples || performance.now() < deadline)) {
       const sample = sampleHands(view, random);
       if (!sample) break;
       const sampleSeed = Math.floor(random() * 0x7fffffff);
       const position = candidate => {
-        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), completed: 0 };
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
         advance(sim, view.player, candidate.cards); return sim;
       };
       let values = [], exact = sample.hands.every(hand => hand.length <= 6);
       if (exact) {
-        const search = { deadline: Math.min(deadline, performance.now() + Math.min(1500, limit * .25)), nodes: 0, cache: new Map() };
+        const exactBudget = sample.hands.every(hand => hand.length <= 3) ? limit : Math.min(1500, limit * .25);
+        const search = { deadline: Math.min(deadline, performance.now() + exactBudget), nodes: 0, cache: new Map() };
         try {
           for (const candidate of active) values.push(endgame(position(candidate), view, search));
         } catch (error) {
@@ -560,34 +677,45 @@ const Bot = (() => {
         nodes += search.nodes;
       }
       if (!exact) for (const candidate of active) {
-        if (performance.now() >= deadline) break;
+        if (samples && performance.now() >= deadline) break;
         const sim = position(candidate), rolloutRandom = R.seeded(sampleSeed);
         let guard = 0;
-        while (!sim.hands.every(hand => !hand.length) && sim.completed < depth && guard++ < 110 && performance.now() < deadline) {
+        while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
           const move = rolloutPick(sim, rolloutRandom);
           if (!move) break;
           advance(sim, sim.turn, move);
         }
-        if (performance.now() >= deadline) break;
-        values.push(leafValue(sim, view));
+        if (!sim.hands.every(hand => !hand.length)) {
+          if (samples && performance.now() >= deadline) break;
+          throw new Error('整局推演未能完成，无法计算赢面');
+        }
+        values.push(terminalValue(sim, view));
       }
       if (values.length !== active.length) break;
-      active.forEach((candidate, i) => { candidate.total += values[i]; candidate.squared += values[i] ** 2; candidate.visits++; });
+      const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
+      active.forEach((candidate, i) => {
+        const won = values[i] > 0;
+        const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
+        candidate.wins += Number(won);
+        candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
+        candidate.visits++;
+        if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
+      });
       if (exact) exactSamples++;
       samples++;
-      if (samples >= 8 && samples % 4 === 0 && active.length > 8) {
+      if (samples >= 16 && samples % 4 === 0 && active.length > 8) {
         const bounds = active.map(candidate => {
-          const average = candidate.total / candidate.visits;
-          const uncertainty = 2 * Math.sqrt(Math.max(0, candidate.squared / candidate.visits - average ** 2) / candidate.visits) + 400 / Math.sqrt(candidate.visits);
-          return { candidate, average, lower: average - uncertainty, upper: average + uncertainty };
+          return { candidate, ...winBounds(candidate.wins, candidate.visits) };
         });
         const bestLower = Math.max(...bounds.map(entry => entry.lower));
-        active = bounds.filter(entry => entry.upper >= bestLower).sort((a, b) => b.average - a.average).map(entry => entry.candidate);
+        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred).map(entry => entry.candidate);
       }
     }
-    const finalists = samples ? active : ranked;
-    finalists.sort((a, b) => (samples ? b.total / b.visits - a.total / a.visits : 0) || b.prior - a.prior);
-    return { cards: finalists[0].cards, samples, exactSamples, nodes, candidates: candidates.length, elapsed: performance.now() - started };
+    if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
+    active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
+    const best = active[0];
+    return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -632,7 +760,7 @@ const Bot = (() => {
     if (best && (current.limit < nextBid || best.limit >= current.limit + 10)) return best;
     return current;
   }
-  return { choose, contract, auction, unknownCards, sampleHands, prior, tacticalMoves };
+  return { choose, contract, auction, unknownCards, sampleHands, prior, tacticalMoves, rolloutPick };
 })();
 globalThis.TractorBot = Bot;
 if (typeof module !== 'undefined') module.exports = Bot;
@@ -682,21 +810,22 @@ const Rules = (() => {
     for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
     return result;
   }
-  function describe(cards, trump) {
+  function describe(cards, trump, asThrow = false) {
+    if (!Array.isArray(cards)) { asThrow = asThrow || Boolean(cards?.throw); cards = cards?.cards || []; }
     if (!cards.length) return null;
     const g = group(cards[0], trump);
     if (!cards.every(id => group(id, trump) === g)) return null;
     const n = cards.length;
     const max = Math.max(...cards.map(id => level(id, trump)));
     if (n === 1) return { type: 'single', n, group: g, max };
+    if (asThrow) return { type: 'throw', n, group: g, max };
     const ps = pairs(cards);
     if (n === 2 && ps.length === 1) return { type: 'pair', n, group: g, max };
     if (n >= 4 && n % 2 === 0 && ps.length * 2 === n) {
       const levels = ps.map(p => level(p[0], trump)).sort((a, b) => a - b);
       if (levels.every((v, i) => !i || v === levels[i - 1] + 1)) return { type: 'tractor', n, group: g, max };
     }
-    if (g !== 4 && ps.length === 0) return { type: 'throw', n, group: g, max };
-    return null;
+    return { type: 'throw', n, group: g, max };
   }
   const typeName = d => !d ? '未成牌型' : d.type === 'single' ? '单牌' : d.type === 'pair' ? '对子' : d.type === 'throw' ? `甩牌 · ${d.n} 张` : `${d.n / 2} 对拖拉机`;
   function mainSelectionError(pool, chosen, n, trump) {
@@ -714,7 +843,7 @@ const Rules = (() => {
   function validate(hand, cards, lead, trump) {
     if (!cards.length) return '请先选牌';
     if (new Set(cards).size !== cards.length || cards.some(id => !hand.includes(id))) return '所选牌不在手中';
-    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子或同花色的不同单牌';
+    if (!lead) return describe(cards, trump) ? '' : '首攻请选择单牌、对子、连续对子，或同一花色、同一主牌组的甩牌';
     const d = describe(lead, trump);
     if (!d) return '首家牌型无效';
     if (cards.length !== d.n) return `本轮需要跟 ${d.n} 张牌`;
@@ -749,11 +878,11 @@ const Rules = (() => {
   }
   function winningIndex(plays, trump) {
     let best = 0;
-    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0].cards, trump) > strength(plays[best].cards, plays[0].cards, trump)) best = i;
+    for (let i = 1; i < plays.length; i++) if (strength(plays[i].cards, plays[0], trump) > strength(plays[best].cards, plays[0], trump)) best = i;
     return best;
   }
-  function throwFailure(cards, hands, player, trump) {
-    const d = describe(cards, trump);
+  function throwFailure(cards, hands, player, trump, asThrow = false) {
+    const d = describe(cards, trump, asThrow);
     if (d?.type !== 'throw') return false;
     const min = Math.min(...cards.map(id => level(id, trump)));
     return hands.some((hand, p) => p !== player && hand.some(id => group(id, trump) === d.group && level(id, trump) > min));
@@ -785,10 +914,11 @@ const Rules = (() => {
         });
       };
       groupPairs.forEach(p => extend(p, level(p[0], trump) + 1));
-      if (allowThrow && g < 4) {
+      if (allowThrow) {
         const unknownMax = Math.max(0, ...unseen.filter(id => group(id, trump) === g).map(id => level(id, trump)));
         const safe = hand.filter(id => group(id, trump) === g && level(id, trump) >= unknownMax).sort(byPower(trump));
         const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
+        if (safe.length >= 2 && describe(safe, trump).type === 'throw') moves.push(safe);
         if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
       }
     }
@@ -822,6 +952,32 @@ const Rules = (() => {
     const structured = d.type !== 'throw';
     const results = new Map();
     const add = move => { if (!validate(hand, move, lead, trump)) results.set(move.slice().sort((a, b) => a - b).join(','), move); };
+    if (options.enumerate) {
+      const main = d.group === 4 ? [] : hand.filter(id => group(id, trump) === 4);
+      const nMain = Math.min(d.n - nSame, main.length);
+      const other = hand.filter(id => group(id, trump) !== d.group && group(id, trump) !== 4);
+      const parts = [{ pool, n: nSame }, { pool: main, n: nMain }, { pool: other, n: d.n - nSame - nMain }];
+      let combinations = 1;
+      for (const part of parts) {
+        const k = Math.min(part.n, part.pool.length - part.n);
+        for (let i = 1; i <= k; i++) combinations *= (part.pool.length - i + 1) / i;
+      }
+      // Enumerate manageable follow choices by required group counts. This
+      // includes preserving or splitting structures without relying on luck.
+      if (combinations <= options.enumerate + 1e-6) {
+        const enumerate = (part, start, need, selected) => {
+          if (!need) {
+            if (part === parts.length - 1) add(selected);
+            else enumerate(part + 1, 0, parts[part + 1].n, selected);
+            return;
+          }
+          const cards = parts[part].pool;
+          for (let i = start; i <= cards.length - need; i++) enumerate(part, i + 1, need - 1, [...selected, cards[i]]);
+        };
+        enumerate(0, 0, nSame, []);
+        return [...results.values()];
+      }
+    }
     for (let mode = 0; mode < (options.samples || 20); mode++) {
       let chosen = pick(pool, nSame, structured, structured && d.group === 4, trump, mode, random);
       let n = d.n - chosen.length;
@@ -941,17 +1097,93 @@ const Bot = (() => {
     }
     return null;
   }
-  function prior(hand, cards, trick, player, dealer, trump, unseen) {
-    const lead = trick.length ? trick[0].cards : null;
+  // Shared by move ordering and tactical conservation: a pair and its tractor links
+  // have separate value, and initiative matters only when the remaining hand can use it.
+  function handProfile(hand, trump, unseen = null, rivals = null) {
+    // In a sampled deal only the opposing side can take our control away.
+    // Partner cards and the buried cards must not act as phantom opponents.
+    if (rivals) unseen = rivals.flat();
+    const pairs = R.pairs(hand), paired = new Set(pairs.flat());
+    const levels = Array.from({ length: 5 }, () => new Set());
+    for (const pair of pairs) levels[R.group(pair[0], trump)].add(R.level(pair[0], trump));
+    let links = 0, initiative = 0;
+    for (const group of levels) for (const level of group) if (group.has(level + 1)) links++;
+    if (unseen) {
+      const rivalPairs = rivals ? rivals.flatMap(R.pairs) : R.pairs(unseen);
+      const mainThreat = unseen.some(id => R.group(id, trump) === 4);
+      for (let g = 0; g <= 4; g++) {
+        const own = hand.filter(id => R.group(id, trump) === g);
+        if (!own.length) continue;
+        const rivals = unseen.filter(id => R.group(id, trump) === g);
+        const high = Math.max(0, ...rivals.map(id => R.level(id, trump)));
+        const factor = g === 4 || !mainThreat ? 1 : 0.65;
+        const topSingles = own.filter(id => !paired.has(id) && R.level(id, trump) >= high).length;
+        initiative += topSingles * 2.5 * factor;
+        const powers = new Map();
+        for (const pair of pairs.filter(p => R.group(p[0], trump) === g)) {
+          const level = R.level(pair[0], trump);
+          const threats = rivalPairs.filter(p => R.group(p[0], trump) === g && R.level(p[0], trump) > level).length;
+          const power = 1 / (1 + threats);
+          powers.set(level, power);
+          initiative += 4 * power * factor;
+        }
+        for (const [level, power] of powers) if (powers.has(level + 1)) initiative += 5 * Math.min(power, powers.get(level + 1)) * factor;
+        if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
+      }
+    }
+    return { pairs: pairs.length, links, initiative: Math.min(30, initiative) };
+  }
+  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
+    if (!trick.length || player === dealer) return null;
+    const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
+    if (winner.player === dealer) return null;
+    const power = R.strength(winner.cards, lead, trump);
+    let ceiling = -1;
+    if (!trick.some(entry => entry.player === dealer)) {
+      if (dealerHand) {
+        // Only a hypothetical sampled hand is supplied here, never the live deal.
+        ceiling = Math.max(-1, ...R.legalMoves(dealerHand, lead, trump, { samples: 4 }).map(cards => R.strength(cards, lead, trump)));
+      } else if (!unseen) ceiling = 120;
+      else {
+        // Public information cannot tell us which opponent holds an unseen card.
+        // Consider both following suit and a possible trump cut conservatively.
+        const description = R.describe(lead, trump);
+        for (const group of new Set([description.group, 4])) {
+          const pool = unseen.filter(id => R.group(id, trump) === group);
+          if (pool.length < description.n) continue;
+          if (description.type === 'single' || description.type === 'throw') {
+            ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...pool.map(id => R.level(id, trump))));
+          } else {
+            const moves = description.type === 'pair' ? R.pairs(pool) : R.leadMoves(pool, trump, [], false).filter(cards => cards.length === description.n);
+            ceiling = Math.max(ceiling, ...moves.map(cards => R.strength(cards, lead, trump)));
+          }
+        }
+      }
+    }
+    return { winner: winner.player, power, ceiling, safe: power >= ceiling };
+  }
+  function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
+    const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
+    const lead = trick[0] || null;
     const description = R.describe(cards, trump);
-    const beforePairs = R.pairs(hand).length;
     const after = R.remove(hand, cards);
-    const broken = beforePairs - R.pairs(after).length - R.pairs(cards).length;
+    const beforeProfile = handProfile(hand, trump, lead ? unseen : null, lead ? rivals : null), afterProfile = handProfile(after, trump, lead ? unseen : null, lead ? rivals : null), playedProfile = handProfile(cards, trump);
+    const broken = beforeProfile.pairs - afterProfile.pairs - playedProfile.pairs;
+    const brokenLinks = Math.max(0, beforeProfile.links - afterProfile.links - playedProfile.links);
     const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
-    let score = cards.length * 1.3 - cost - broken * 5;
+    let score = cards.length * 1.3 - cost - broken * 5 - brokenLinks * 6;
     if (!lead) {
-      const g = R.group(cards[0], trump), max = Math.max(...cards.map(id => R.level(id, trump)));
-      const threats = unseen.filter(id => R.group(id, trump) === g && R.level(id, trump) > max).length;
+      const g = R.group(cards[0], trump), power = R.strength(cards, cards, trump);
+      // A higher single cannot beat a pair or tractor. In a sampled position,
+      // inspect each opponent separately so split copies cannot form a phantom pair.
+      const threats = (rivals || [unseen]).reduce((count, rival) => {
+        const same = rival.filter(id => R.group(id, trump) === g);
+        const pool = same.length >= cards.length ? same : same.length ? [] : rival.filter(id => R.group(id, trump) === 4);
+        if (pool.length < cards.length) return count;
+        if (description.type === 'pair') return count + R.pairs(pool).filter(pair => R.strength(pair, cards, trump) > power).length;
+        if (description.type === 'tractor') return count + R.leadMoves(pool, trump, [], false).filter(move => move.length === cards.length && R.strength(move, cards, trump) > power).length;
+        return count + pool.filter(id => (R.group(id, trump) === 4 ? 100 : 0) + R.level(id, trump) > power).length;
+      }, 0);
       score += threats === 0 ? 13 : -Math.min(12, threats * 1.6);
       if (description?.type === 'pair') score += 4;
       if (description?.type === 'tractor') score += cards.length * 3;
@@ -962,14 +1194,20 @@ const Bot = (() => {
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
     } else {
+      score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
       const current = trick[R.winningIndex(trick, trump)];
-      const wins = R.strength(cards, lead, trump) > R.strength(current.cards, lead, trump);
+      const movePower = R.strength(cards, lead, trump);
+      const wins = movePower > R.strength(current.cards, lead, trump);
       const friendly = sameTeam(player, current.player, dealer);
       const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
-      if (wins) score += (friendly ? 0 : 10 + pot * 0.8) - (friendly && trick.length === 2 ? 7 : 0);
-      const safeFriendly = friendly && (trick.length === 2 || R.strength(current.cards, lead, trump) >= 120);
-      score += R.points(cards) * ((wins || safeFriendly) ? 0.7 : -0.85);
-      if (!wins && !friendly) score -= 4;
+      // Taking points and taking the lead are distinct benefits. Evaluate control
+      // after this move, so spending the last key card cannot earn a phantom bonus.
+      const teamHolds = support && Math.max(support.power, movePower) >= support.ceiling;
+      if (wins) score += friendly
+        ? (!support.safe && teamHolds ? 14 + pot * 1.5 : support.safe ? -7 : 0)
+        : 14 + pot * 1.5 + afterProfile.initiative * 1.2;
+      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins ? 0.7 : -0.85);
+      if (!wins && !friendly) score -= 4 + pot * 0.5;
     }
     return score;
   }
@@ -987,57 +1225,58 @@ const Bot = (() => {
     sim.completed++;
     return done;
   }
-  function tacticalMoves(hand, moves, trick, player, dealer, trump) {
-    // Keep every endgame move for exact search: the final trump and bottom may matter more.
-    if (hand.length <= 6 || !trick.length || trick[0].cards.length !== 1) return moves;
-    const lead = trick[0].cards, winner = trick[R.winningIndex(trick, trump)];
+  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump)) {
+    if (!trick.length || !moves.length) return moves;
+    const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     const strength = R.strength(winner.cards, lead, trump);
-    const canWin = moves.some(cards => R.strength(cards, lead, trump) > strength);
-    if (canWin || (strength < 120 && trick.length !== 2)) return moves;
-    // The winning side is settled. Feed a safe partner; withhold points from the dealer.
+    const winning = moves.filter(cards => R.strength(cards, lead, trump) > strength);
+    const losing = moves.filter(cards => R.strength(cards, lead, trump) <= strength);
+    if (!losing.length) return moves;
     const friendly = sameTeam(player, winner.player, dealer);
-    const pointLimit = friendly ? Math.max(...moves.map(R.points)) : Math.min(...moves.map(R.points));
-    const economical = moves.filter(cards => R.points(cards) === pointLimit);
-    const paired = new Set(R.pairs(hand).flat());
-    const cost = cards => R.level(cards[0], trump) + (paired.has(cards[0]) ? 3 : 0);
+    // Both sides conserve points and control when beaten. Feed only an already-safe teammate.
+    const safePartner = friendly && support.safe;
+    const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
+    const economical = losing.filter(cards => R.points(cards) === pointLimit);
+    // When we can contest the trick, compare every minimum-point concession with
+    // every winning move. A slightly larger loser may preserve a valuable tractor.
+    if (!safePartner && winning.length) return [...winning, ...economical];
+    const before = handProfile(hand, trump);
+    const cost = cards => {
+      const after = handProfile(R.remove(hand, cards), trump), played = handProfile(cards, trump);
+      return cards.reduce((sum, id) => sum + R.level(id, trump), 0)
+        + (before.pairs - after.pairs - played.pairs) * 3 + Math.max(0, before.links - after.links - played.links) * 6;
+    };
     const minimum = Math.min(...economical.map(cost));
-    return economical.filter(cards => cost(cards) === minimum);
+    return [...(safePartner ? [] : winning), ...economical.filter(cards => cost(cards) === minimum)];
   }
   function rolloutPick(sim, random) {
     const hand = sim.hands[sim.turn];
-    const lead = sim.trick[0]?.cards || null;
+    const lead = sim.trick[0] || null;
     const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
-    const moves = tacticalMoves(hand, R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen, allowThrow: false }), sim.trick, sim.turn, sim.dealer, sim.trump);
+    const rivals = sim.hands.filter((hand, player) => !sameTeam(sim.turn, player, sim.dealer));
+    const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
+    const available = R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    // Simulations must also consider conceding points to preserve a decisive
+    // pair or tractor. Economical defaults are tie-breaks, never a move filter.
+    const moves = available;
+    const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen);
-      if (!lead) {
-        const rivals = sim.hands.flatMap((h, p) => sameTeam(sim.turn, p, sim.dealer) ? [] : h);
-        const g = R.group(move[0], sim.trump);
-        if (g !== 4 && rivals.filter(id => R.group(id, sim.trump) === g).length === 0) score -= 8;
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support });
+      if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
+        const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
+        score += (ownControl - partnerControl) * 1.2;
       }
       score += (random() - .5) * 1.5;
       if (score > bestScore) { bestScore = score; best = move; }
     }
     return best;
   }
-  function leafValue(sim, view) {
+  function terminalValue(sim, view) {
     const sign = view.player === view.dealer ? -1 : 1;
-    const threshold = R.farmerTarget(view.bid);
-    if (sim.hands.every(hand => hand.length === 0)) {
-      const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
-      const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
-      return (win ? 850 : -850) + sign * sim.farmerScore;
-    }
-    let score = sign * (sim.farmerScore - view.farmerScore) * 4.5;
-    if (sim.farmerScore >= threshold) score += sign * 150;
-    score += sameTeam(sim.turn, view.player, view.dealer) ? 6 : -6;
-    sim.hands.forEach((hand, p) => {
-      let control = hand.reduce((sum, id) => sum + (R.group(id, view.trump) === 4 ? 1.2 + Math.max(0, R.level(id, view.trump) - 14) * 1.1 : R.rank(id) === 14 ? 2.8 : 0), 0);
-      control += R.pairs(hand).reduce((sum, pair) => sum + (R.group(pair[0], view.trump) === 4 ? 3.5 : 1.7), 0);
-      score += control * (sameTeam(p, view.player, view.dealer) ? 1 : -1);
-    });
-    return score;
+    const outcome = R.result(view.dealer, view.bid, sim.farmerScore, view.failed);
+    const win = view.player === view.dealer ? outcome.dealerWins : !outcome.dealerWins;
+    return (win ? 850 : -850) + sign * sim.farmerScore;
   }
   function smallMoves(hand, lead, trump, unseen) {
     const moves = new Map();
@@ -1057,22 +1296,24 @@ const Bot = (() => {
   function endgame(sim, view, search, alpha = -Infinity, beta = Infinity) {
     search.nodes++;
     if (search.nodes % 32 === 1 && (performance.now() >= search.deadline || search.nodes > 150000)) throw searchExpired;
-    if (sim.hands.every(hand => !hand.length)) return leafValue(sim, view);
-    const key = sim.hands.map(hand => hand.map(R.face).sort((a, b) => a - b).join(',')).join('/') + ':' + sim.turn + ':' + sim.farmerScore + ':' + sim.trick.map(p => p.player + '=' + p.cards.map(R.face).sort((a, b) => a - b).join(',')).join('/');
+    if (sim.hands.every(hand => !hand.length)) return terminalValue(sim, view);
+    const key = sim.hands.map(hand => hand.map(R.face).sort((a, b) => a - b).join(',')).join('/') + ':' + sim.turn + ':' + sim.farmerScore + ':' + sim.trick.map(p => p.player + '=' + (p.throw ? 'throw:' : '') + p.cards.map(R.face).sort((a, b) => a - b).join(',')).join('/');
     const originalAlpha = alpha, originalBeta = beta, cached = search.cache.get(key);
     if (cached) {
       if (cached.flag === 'exact') return cached.value;
       if (cached.flag === 'lower') alpha = Math.max(alpha, cached.value); else beta = Math.min(beta, cached.value);
       if (alpha >= beta) return cached.value;
     }
-    const player = sim.turn, hand = sim.hands[player], lead = sim.trick[0]?.cards || null;
+    const player = sim.turn, hand = sim.hands[player], lead = sim.trick[0] || null;
     const unseen = sim.hands.flatMap((cards, p) => p === player ? [] : cards);
-    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen) })).sort((a, b) => b.prior - a.prior);
+    const rivals = sim.hands.filter((cards, p) => !sameTeam(player, p, sim.dealer));
+    const support = farmerSupport(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
+    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support }) })).sort((a, b) => b.prior - a.prior);
     if (!moves.length) throw new Error('残局没有合法出牌');
     const maximize = sameTeam(player, view.player, view.dealer);
     let value = maximize ? -Infinity : Infinity;
     for (const move of moves) {
-      const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(p => ({ player: p.player, cards: p.cards.slice() })) };
+      const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(p => ({ ...p, cards: p.cards.slice() })) };
       advance(next, player, move.cards);
       const result = endgame(next, view, search, alpha, beta);
       value = maximize ? Math.max(value, result) : Math.min(value, result);
@@ -1082,38 +1323,42 @@ const Bot = (() => {
     search.cache.set(key, { value, flag: value <= originalAlpha ? 'upper' : value >= originalBeta ? 'lower' : 'exact' });
     return value;
   }
+  function winBounds(wins, samples) {
+    const rate = wins / samples, z2 = 3.8416, divisor = 1 + z2 / samples;
+    const center = (rate + z2 / (2 * samples)) / divisor;
+    const radius = 1.96 * Math.sqrt(rate * (1 - rate) / samples + z2 / (4 * samples ** 2)) / divisor;
+    return { lower: Math.min(rate, Math.max(0, center - radius)), upper: Math.max(rate, Math.min(1, center + radius)) };
+  }
   function choose(view) {
     const started = performance.now();
     const random = R.seeded(view.seed);
     const unseen = unknownCards(view);
-    const lead = view.trick[0]?.cards || null;
-    const candidates = tacticalMoves(view.hand, view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, unseen }), view.trick, view.player, view.dealer, view.trump);
+    const lead = view.trick[0] || null;
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen });
+    const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
+    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
+    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support);
+    const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
-    let ranked = candidates.map(cards => ({ cards, prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen), total: 0, squared: 0, visits: 0 })).sort((a, b) => b.prior - a.prior);
-    if (view.hand.length > 7) {
-      const count = Math.min(40, Math.max(8, Math.floor(limit / 100))), selected = ranked.slice(0, count), structures = new Set();
-      for (const candidate of ranked) {
-        const d = R.describe(candidate.cards, view.trump), group = R.group(candidate.cards[0], view.trump);
-        const structure = `${group}:${d?.type || 'mixed'}:${candidate.cards.length}`;
-        if (!structures.has(structure)) { if (!selected.includes(candidate)) selected.push(candidate); structures.add(structure); }
-      }
-      ranked = selected;
-    }
-    if (ranked.length === 1) return { cards: ranked[0].cards, samples: 0, elapsed: performance.now() - started };
-    const depth = view.hand.length <= 9 ? 18 : view.hand.length <= 18 ? 12 : 8;
+    // Priors order the work and break outcome ties; they never replace a simulation.
+    // Every generated, distinct candidate receives the same first hidden-hand sample.
+    const ranked = candidates.map(cards => ({ cards, preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support }), wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity })).sort((a, b) => b.prior - a.prior);
     let active = ranked.slice(), samples = 0, exactSamples = 0, nodes = 0;
-    while (samples < (view.maxSamples || 512) && performance.now() < deadline) {
+    // Finish at least one complete paired batch even if a slow device exceeds
+    // the soft time budget. Forced moves also receive an actual win estimate.
+    while (samples < (view.maxSamples || 512) && (!samples || performance.now() < deadline)) {
       const sample = sampleHands(view, random);
       if (!sample) break;
       const sampleSeed = Math.floor(random() * 0x7fffffff);
       const position = candidate => {
-        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), completed: 0 };
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
         advance(sim, view.player, candidate.cards); return sim;
       };
       let values = [], exact = sample.hands.every(hand => hand.length <= 6);
       if (exact) {
-        const search = { deadline: Math.min(deadline, performance.now() + Math.min(1500, limit * .25)), nodes: 0, cache: new Map() };
+        const exactBudget = sample.hands.every(hand => hand.length <= 3) ? limit : Math.min(1500, limit * .25);
+        const search = { deadline: Math.min(deadline, performance.now() + exactBudget), nodes: 0, cache: new Map() };
         try {
           for (const candidate of active) values.push(endgame(position(candidate), view, search));
         } catch (error) {
@@ -1123,34 +1368,45 @@ const Bot = (() => {
         nodes += search.nodes;
       }
       if (!exact) for (const candidate of active) {
-        if (performance.now() >= deadline) break;
+        if (samples && performance.now() >= deadline) break;
         const sim = position(candidate), rolloutRandom = R.seeded(sampleSeed);
         let guard = 0;
-        while (!sim.hands.every(hand => !hand.length) && sim.completed < depth && guard++ < 110 && performance.now() < deadline) {
+        while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
           const move = rolloutPick(sim, rolloutRandom);
           if (!move) break;
           advance(sim, sim.turn, move);
         }
-        if (performance.now() >= deadline) break;
-        values.push(leafValue(sim, view));
+        if (!sim.hands.every(hand => !hand.length)) {
+          if (samples && performance.now() >= deadline) break;
+          throw new Error('整局推演未能完成，无法计算赢面');
+        }
+        values.push(terminalValue(sim, view));
       }
       if (values.length !== active.length) break;
-      active.forEach((candidate, i) => { candidate.total += values[i]; candidate.squared += values[i] ** 2; candidate.visits++; });
+      const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
+      active.forEach((candidate, i) => {
+        const won = values[i] > 0;
+        const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
+        candidate.wins += Number(won);
+        candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
+        candidate.visits++;
+        if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
+      });
       if (exact) exactSamples++;
       samples++;
-      if (samples >= 8 && samples % 4 === 0 && active.length > 8) {
+      if (samples >= 16 && samples % 4 === 0 && active.length > 8) {
         const bounds = active.map(candidate => {
-          const average = candidate.total / candidate.visits;
-          const uncertainty = 2 * Math.sqrt(Math.max(0, candidate.squared / candidate.visits - average ** 2) / candidate.visits) + 400 / Math.sqrt(candidate.visits);
-          return { candidate, average, lower: average - uncertainty, upper: average + uncertainty };
+          return { candidate, ...winBounds(candidate.wins, candidate.visits) };
         });
         const bestLower = Math.max(...bounds.map(entry => entry.lower));
-        active = bounds.filter(entry => entry.upper >= bestLower).sort((a, b) => b.average - a.average).map(entry => entry.candidate);
+        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred).map(entry => entry.candidate);
       }
     }
-    const finalists = samples ? active : ranked;
-    finalists.sort((a, b) => (samples ? b.total / b.visits - a.total / a.visits : 0) || b.prior - a.prior);
-    return { cards: finalists[0].cards, samples, exactSamples, nodes, candidates: candidates.length, elapsed: performance.now() - started };
+    if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
+    active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
+    const best = active[0];
+    return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -1195,7 +1451,7 @@ const Bot = (() => {
     if (best && (current.limit < nextBid || best.limit >= current.limit + 10)) return best;
     return current;
   }
-  return { choose, contract, auction, unknownCards, sampleHands, prior, tacticalMoves };
+  return { choose, contract, auction, unknownCards, sampleHands, prior, tacticalMoves, rolloutPick };
 })();
 globalThis.TractorBot = Bot;
 if (typeof module !== 'undefined') module.exports = Bot;
@@ -1380,11 +1636,11 @@ globalThis.TractorAudio = (() => {
   const seed = () => crypto.getRandomValues(new Uint32Array(1))[0];
   const save = () => { if (state) write('tractor-save-v4', state); };
   const log = text => { state.logs.unshift({ text, round: state.trickNo, time: Date.now() }); state.logs.length = Math.min(state.logs.length, 150); };
-  function spokenCards(cards) {
+  function spokenCards(cards, singles = false) {
     const sorted = R.sortHand(cards, state.trump), cues = [];
     for (let i = 0; i < sorted.length; i++) {
       const face = R.face(sorted[i]);
-      if (i + 1 < sorted.length && R.face(sorted[i + 1]) === face) { cues.push('pair'); i++; }
+      if (!singles && i + 1 < sorted.length && R.face(sorted[i + 1]) === face) { cues.push('pair'); i++; }
       cues.push('card-' + face);
     }
     return cues;
@@ -1485,6 +1741,9 @@ globalThis.TractorAudio = (() => {
     if (state.dealt === 99) {
       state.stock = []; state.phase = 'declare'; state.lastDealt = null;
       log('接牌完成，每人 33 张');
+      if (!fast) audio.play('deal');
+      finishDealing();
+      return;
     }
     if (!fast) { audio.play('deal'); render(); save(); pump(); }
   }
@@ -1535,17 +1794,19 @@ globalThis.TractorAudio = (() => {
     render(); save(); pump(); return true;
   }
   function addVoid(player, group) { if (!state.voids[player].includes(group)) state.voids[player].push(group); }
-  function play(player, cards) {
+  function play(player, cards, asThrow = false) {
     if (state.phase !== 'play' || state.turn !== player) return false;
-    const lead = state.trick[0]?.cards || null;
+    const lead = state.trick[0] || null;
+    asThrow = !lead && asThrow;
     const error = R.validate(state.hands[player], cards, lead, state.trump);
     if (error) { if (player === 0) { toast(error); audio.play('error'); } return false; }
     jobSerial++; busy = false;
-    const throwFailed = !lead && R.throwFailure(cards, state.hands, player, state.trump);
+    const throwFailed = !lead && R.throwFailure(cards, state.hands, player, state.trump, asThrow);
     if (throwFailed) {
       state.failed[player] = true;
       state.shown.push({ player, cards: cards.slice() });
       cards = [cards.slice().sort((a, b) => R.level(a, state.trump) - R.level(b, state.trump))[0]];
+      asThrow = false;
       log(`${NAMES[player]}甩牌失败，本局判负，不扣分`);
       if (player === 0) toast('甩牌失败：你本局判负。改出最小牌，继续完成本局。');
     }
@@ -1556,12 +1817,15 @@ globalThis.TractorAudio = (() => {
     }
     state.hands[player] = R.remove(state.hands[player], cards);
     state.played.push(...cards);
-    state.trick.push({ player, cards: cards.slice() });
+    state.trick.push({ player, cards: cards.slice(), ...(asThrow ? { throw: true } : {}) });
     selected.clear(); lastHint = [];
-    const desc = R.describe(cards, state.trump);
+    const desc = R.describe(cards, state.trump, asThrow);
+    // 甩牌只属于领牌；跟牌的要求和播报方式以本轮领牌为准。
+    const isThrow = !lead && desc?.type === 'throw';
+    const followThrow = lead && R.describe(lead, state.trump)?.type === 'throw';
     audio.play(throwFailed ? 'error' : desc?.type === 'tractor' ? 'tractor' : desc?.type === 'pair' ? 'pair' : 'play');
-    audio.say([...(throwFailed ? ['throw-failed'] : []), ...spokenCards(cards)]);
-    log(`${NAMES[player]}出 ${cards.map(R.label).join(' ')}${desc?.type === 'tractor' ? ' · 拖拉机' : ''}`);
+    audio.say([...(throwFailed ? ['throw-failed'] : []), ...spokenCards(cards, isThrow || followThrow)]);
+    log(`${NAMES[player]}出 ${cards.map(R.label).join(' ')}${lead ? ' · 跟牌' : desc?.type === 'tractor' ? ' · 拖拉机' : isThrow ? ' · 甩牌' : ''}`);
     if (state.trick.length === 3) { state.phase = 'collect'; }
     else state.turn = (player + 1) % 3;
     render(); save(); pump(); return true;
@@ -1573,7 +1837,7 @@ globalThis.TractorAudio = (() => {
     const complete = state.hands.every(hand => hand.length === 0);
     state.wonPoints[winner] += points;
     if (winner === state.dealer) state.dealerScore += points; else state.farmerScore += points;
-    state.lastTrick = { plays: state.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), winner, points, number: state.trickNo };
+    state.lastTrick = { plays: state.trick.map(p => ({ ...p, cards: p.cards.slice() })), winner, points, number: state.trickNo };
     state.history.push(state.lastTrick);
     log(`${NAMES[winner]}收下本轮${points ? ` ${points} 分` : ''}`);
     if (complete) {
@@ -1596,7 +1860,7 @@ globalThis.TractorAudio = (() => {
     render(); save(); pump();
   }
   function makeView(player) {
-    return { player, hand: state.hands[player].slice(), trump: state.trump, dealer: state.dealer, bid: state.bid, bidBase: state.bidBase, reverseSuits: state.phase === 'bid' ? declareOptions(player).filter(option => option.pair).map(option => option.suit) : [], farmerScore: state.farmerScore, counts: state.hands.map(h => h.length), trick: state.trick.map(p => ({ player: p.player, cards: p.cards.slice() })), played: state.played.slice(), shown: state.shown.map(p => ({ player: p.player, cards: p.cards.slice() })), voids: state.voids.map(v => v.slice()), bottom: player === state.dealer ? state.bottom.slice() : null, failed: state.failed.slice(), seed: state.seed + state.played.length * 1009 + player * 181, thinkMs: state.phase === 'bid' ? 7000 : 6000, maxSamples: 512 };
+    return { player, hand: state.hands[player].slice(), trump: state.trump, dealer: state.dealer, bid: state.bid, bidBase: state.bidBase, reverseSuits: state.phase === 'bid' ? declareOptions(player).filter(option => option.pair).map(option => option.suit) : [], farmerScore: state.farmerScore, counts: state.hands.map(h => h.length), trick: state.trick.map(p => ({ ...p, cards: p.cards.slice() })), played: state.played.slice(), shown: state.shown.map(p => ({ player: p.player, cards: p.cards.slice() })), voids: state.voids.map(v => v.slice()), bottom: player === state.dealer ? state.bottom.slice() : null, failed: state.failed.slice(), seed: state.seed + state.played.length * 1009 + player * 181, thinkMs: state.phase === 'bid' ? 7000 : 6000, maxSamples: 512 };
   }
   function getWorker() {
     if (!worker) {
@@ -1633,8 +1897,8 @@ globalThis.TractorAudio = (() => {
           const best = payload.reverseSuits.map(suit => ({ reverseSuit: suit, limit: R.bidLimit(payload.hand, suit) })).sort((a, b) => b.limit - a.limit)[0];
           accept(best && best.limit >= 130 && (limit < (payload.bid ? payload.bid + 10 : payload.bidBase) || best.limit >= limit + 10) ? best : { limit }); return;
         }
-        const cards = kind === 'bury' ? R.bury(payload.hand, payload.trump, R.seeded(payload.seed), 640) : globalThis.TractorBot.tacticalMoves(payload.hand, R.legalMoves(payload.hand, payload.trick[0]?.cards || null, payload.trump, { unseen: globalThis.TractorBot.unknownCards(payload), random: R.seeded(payload.seed) }), payload.trick, payload.player, payload.dealer, payload.trump)[0];
-        accept({ cards });
+        if (kind === 'bury') accept({ cards: R.bury(payload.hand, payload.trump, R.seeded(payload.seed), 640) });
+        else accept(globalThis.TractorBot.choose(payload));
       } catch (error) { busy = false; toast('思考中断，请重新选择出牌'); render(); }
     };
     try {
@@ -1648,7 +1912,7 @@ globalThis.TractorAudio = (() => {
     if (!state || testMode) return;
     clearTimeout(timer); timer = null;
     if (state.phase === 'deal' && !state.paused) schedule(() => dealOne(), Number(config.dealSpeed));
-    else if (state.phase === 'declare' && !state.paused) schedule(finishDealing, state.locked ? 1300 : 4500);
+    else if (state.phase === 'declare') finishDealing();
     else if (state.phase === 'force' && (state.turn !== 0 || state.auto)) schedule(() => {
       const options = declareOptions(state.turn).sort((a, b) => R.bidLimit(state.hands[state.turn], b.suit) - R.bidLimit(state.hands[state.turn], a.suit) || Number(b.pair) - Number(a.pair));
       if (options[0]) declare(state.turn, options[0].suit, options[0].pair);
@@ -1684,17 +1948,17 @@ globalThis.TractorAudio = (() => {
       const move = plays.find(entry => entry.player === p);
       const css = p === 0 ? 'self' : p === 1 ? 'left' : 'right';
       if (!move) return `<div class="pile pile-${css}"></div>`;
-      const d = R.describe(move.cards, state.trump);
+      const label = move === plays[0] ? R.typeName(R.describe(move, state.trump)) : `跟牌 · ${move.cards.length} 张`;
       const width = $('table').clientWidth * (p === 0 ? .38 : .28);
       const cardWidth = innerWidth <= 520 ? 37 : innerWidth <= 850 ? 44 : 52;
       const step = Math.min(cardWidth - 12, Math.max(7, (width - cardWidth) / Math.max(1, move.cards.length - 1)));
-      return `<div class="pile pile-${css}"><div class="pile-label ${winner === p ? 'winner' : ''}">${winner === p ? '本轮领先 · ' : ''}${d ? R.typeName(d) : '跟牌'}${p === 0 ? ' · 你' : ''}</div><div class="played-cards ${move.cards.length > 3 ? 'many' : ''}" style="--pile-step:${step}px">${R.sortHand(move.cards, state.trump).map(id => cardHTML(id, { played: true })).join('')}</div></div>`;
+      return `<div class="pile pile-${css}"><div class="pile-label ${winner === p ? 'winner' : ''}">${winner === p ? '本轮领先 · ' : ''}${label}${p === 0 ? ' · 你' : ''}</div><div class="played-cards ${move.cards.length > 3 ? 'many' : ''}" style="--pile-step:${step}px">${R.sortHand(move.cards, state.trump).map(id => cardHTML(id, { played: true })).join('')}</div></div>`;
     }).join('');
     let center = '';
     if (['deal', 'declare', 'force'].includes(state.phase)) center = `<div class="center-caption">${state.first === 0 ? '你先接牌' : NAMES[state.first] + '先接牌'}</div><div class="deck-stack">♠</div><div class="deal-count">${state.dealt} / 99</div>`;
     else if (state.phase === 'bid') center = `<div class="center-caption">当前叫分</div><div class="center-heading">${state.bid || '—'} 分</div><div class="trump-watermark">${R.SUITS[state.trump]}</div>`;
     else if (state.phase === 'bury') center = `<div class="center-caption">${NAMES[state.dealer]}埋底中</div><div class="deck-stack">9</div>`;
-    else center = `<div class="center-caption">第 ${state.trickNo} 轮</div><div class="center-heading">${state.phase === 'end' ? '本局结束' : plays.length ? R.typeName(R.describe(plays[0].cards, state.trump)) : NAMES[state.turn] + '领牌'}</div><div class="trump-watermark">${R.SUITS[state.trump]}</div>`;
+    else center = `<div class="center-caption">第 ${state.trickNo} 轮</div><div class="center-heading">${state.phase === 'end' ? '本局结束' : plays.length ? R.typeName(R.describe(plays[0], state.trump)) : NAMES[state.turn] + '领牌'}</div><div class="trump-watermark">${R.SUITS[state.trump]}</div>`;
     const pot = plays.reduce((sum, entry) => sum + R.points(entry.cards), 0);
     $('table').innerHTML = seats + `<div class="center-stage">${center}</div>` + piles + (declaration?.player === 0 ? declaredCards : '') + (plays.length ? `<div class="trick-pot"><strong>${pot}</strong>本轮分数</div>` : '') + `<div class="turn-note">${state.dealer >= 0 ? NAMES[state.dealer] + '坐庄 · ' + state.bid + ' 分' : '主花色 ' + (state.trump < 0 ? '未定' : R.SUIT_NAMES[state.trump])}</div><div class="table-status">${icon('CircleDot')}${phaseName()}</div>`;
   }
@@ -1719,8 +1983,12 @@ globalThis.TractorAudio = (() => {
       if (state.dealer === 0 && !state.auto) actions = button('hint', busy ? '思考中' : '建议', 'Lightbulb', '', busy) + button('clear', '', 'RotateCcw', '', !selected.size) + button('bury', '埋底', 'ArrowDownToLine', 'primary', selected.size !== 9);
     } else if (state.phase === 'play') {
       title = state.turn === 0 ? state.auto ? '正在托管' : state.trick.length ? '轮到你跟牌' : '由你领牌' : `${NAMES[state.turn]}${busy ? '思考中' : '出牌中'}`;
-      subtitle = state.trick.length ? `${R.typeName(R.describe(state.trick[0].cards, state.trump))} · 跟 ${state.trick[0].cards.length} 张` : state.trickNo === 1 ? '庄家首攻' : '上一轮赢家领牌';
-      if (state.turn === 0 && !state.auto) actions = button('hint', busy ? '思考中' : '提示', 'Lightbulb', '', busy) + button('clear', '', 'RotateCcw', '', !selected.size) + button('play', '出牌', 'ArrowUpRight', 'primary', !selected.size);
+      subtitle = state.trick.length ? `${R.typeName(R.describe(state.trick[0], state.trump))} · 跟 ${state.trick[0].cards.length} 张` : state.trickNo === 1 ? '庄家首攻' : '上一轮赢家领牌';
+      if (state.turn === 0 && !state.auto) {
+        const canThrow = !state.trick.length && selected.size >= 2 && R.describe([...selected], state.trump, true);
+        actions = button('hint', busy ? '思考中' : '提示', 'Lightbulb', '', busy) + button('clear', '', 'RotateCcw', '', !selected.size)
+          + (canThrow ? button('throw', '甩牌', 'Layers') : '') + button('play', '出牌', 'ArrowUpRight', 'primary', !selected.size);
+      }
     } else if (state.phase === 'collect') { const winner = state.trick[R.winningIndex(state.trick, state.trump)].player; title = `${NAMES[winner]}赢得本轮`; subtitle = `${state.trick.reduce((n, p) => n + R.points(p.cards), 0)} 分`; }
     else { title = state.outcome?.wins[0] ? '本局获胜' : '本局落败'; subtitle = state.failed[0] ? '甩牌失败，个人判负' : `闲家 ${state.farmerScore} 分 / ${state.bid === 200 ? '得分即破庄' : '门槛 ' + R.farmerTarget(state.bid) + ' 分'}`; actions = button('result', '结算', 'ListChecks') + button('next', '下一局', 'ArrowRight', 'primary'); }
     if (state.auto && state.phase !== 'end') actions += button('auto', '取消托管', 'UserRound', 'gold');
@@ -1791,7 +2059,7 @@ globalThis.TractorAudio = (() => {
       <li>对子限同花同点。两对及以上连续对子组成拖拉机，按上述新牌序连接。同级牌先出者大。</li>
       <li>跟牌张数与首家一致。对子、拖拉机先跟同花色对子，不强制跟成拖拉机；花色不足补主，主不足才垫其他副牌。</li>
       <li>补主先出对子，主对子可自由选择；剩余单牌必须先从大到小出硬主，再任选其他软主。</li>
-      <li>副牌甩牌按单牌处理。同花色不足时补任意主牌，没有对子或硬主优先。其他人持有大于甩牌最小牌的同花色牌，则甩牌失败。</li>
+      <li><b>只有每轮领牌才能甩牌，跟牌不算甩牌，也不进行甩牌失败判定。</b>主牌、副牌均可甩牌，可以含对子；甩出的对子按两张单牌计算。领牌选牌后点“甩牌”，按单牌组合处理；点“出牌”仍优先识别对子、拖拉机。跟甩牌没有对子或硬主优先，不需对子管住；有对应牌组先跟足，副牌不足先补任意主牌。其他人持有大于甩牌最小牌的同组牌，则甩牌失败。</li>
       <li><b>甩牌失败者个人当局判负，不罚分；另一名闲家不受影响。</b>失败后改出最小一张，继续打完本局。</li>
       <li>同花色不足而夹带主牌不能管上；完全缺门才可能以全部主牌管上，且须满足对子或拖拉机结构。</li>
       <li>副牌单牌缺门可以自由出牌；主牌单牌有主必须跟主。</li>
@@ -1838,6 +2106,7 @@ globalThis.TractorAudio = (() => {
     else if (action === 'pass-bid') bid(0, 0);
     else if (action === 'bury') bury(0, [...selected]);
     else if (action === 'play') play(0, [...selected]);
+    else if (action === 'throw') play(0, [...selected], true);
     else if (action === 'clear') { selected.clear(); renderHand(); renderDecision(); }
     else if (action === 'hint') askBot(0, state.phase === 'bury' ? 'bury' : 'play', true);
     else if (action === 'auto') { state.auto = !state.auto; selected.clear(); if (!state.auto) { jobSerial++; busy = false; } state.paused = false; save(); render(); pump(); }

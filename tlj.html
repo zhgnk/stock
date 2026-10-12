@@ -201,13 +201,39 @@ const Rules = (() => {
     const winner = plays[winningIndex(plays, trump)];
     return winner.player !== dealer && winner.cards.every(id => group(id, trump) === 4);
   }
+  function followConstraints(history, trick, trump) {
+    const ceilings = [20, 20, 20];
+    const noPairs = [[], [], []], forbidden = [new Set(), new Set(), new Set()];
+    for (const round of [...history, { plays: trick }]) {
+      const plays = round.plays, lead = plays[0] && describe(plays[0], trump);
+      if (!lead || !['pair', 'tractor'].includes(lead.type)) continue;
+      for (const play of plays.slice(1)) {
+        for (const g of new Set([lead.group, 4])) {
+          const followed = play.cards.filter(id => group(id, trump) === g);
+          const ps = pairs(followed);
+          if (ps.length < Math.floor(followed.length / 2)) {
+            if (!noPairs[play.player].includes(g)) noPairs[play.player].push(g);
+            for (const id of remove(followed, ps.flat())) forbidden[play.player].add(face(id));
+          }
+        }
+        const main = play.cards.filter(id => group(id, trump) === 4);
+        const singles = remove(main, pairs(main).flat());
+        if (!singles.length) continue;
+        // Structured follows must use the highest remaining hard trumps after
+        // the selected pairs. A soft single proves no hard trump remains.
+        const ceiling = singles.some(id => !hard(id)) ? 14 : Math.min(...singles.map(id => level(id, trump)));
+        ceilings[play.player] = Math.min(ceilings[play.player], ceiling);
+      }
+    }
+    return { hardCeilings: ceilings, noPairs, forbiddenFaces: forbidden.map(set => [...set]) };
+  }
   // 分牌以 5 分递增；守 200 时，闲家取得任何分数即破庄。
   const farmerTarget = bid => bid === 200 ? 5 : 200 - bid;
   function result(dealer, bid, farmerScore, failed) {
     const dealerWins = !failed[dealer] && farmerScore < farmerTarget(bid);
     return { dealerWins, wins: [0, 1, 2].map(p => !failed[p] && (p === dealer ? dealerWins : !dealerWins)) };
   }
-  function leadMoves(hand, trump, unseen = [], allowThrow = true) {
+  function leadMoves(hand, trump, unseen = [], allowThrow = true, partialThrows = false) {
     const moves = [];
     const faces = new Set();
     hand.forEach(id => { if (!faces.has(face(id))) moves.push([id]); faces.add(face(id)); });
@@ -229,6 +255,25 @@ const Rules = (() => {
         const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
         if (safe.length >= 2 && describe(safe, trump).type === 'throw') moves.push(safe);
         if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
+        if (partialThrows && g === 4 && safe.length >= 4) {
+          // Compare clearing some trumps while retaining entries with spending
+          // the entire safe group. Keep each face together so a cheap subset
+          // does not silently split a pair. Three orders cover cashing high
+          // cards, retaining high cards, and cashing pairs with spare singles.
+          const units = distinct.map(id => safe.filter(card => face(card) === face(id)));
+          const lengths = new Set([3, 4, 6, 8, Math.floor(safe.length / 2), safe.length - 2, safe.length - 1]);
+          const seen = new Set(moves.map(cards => cards.map(face).sort((a, b) => a - b).join(',')));
+          const orders = [units, units.slice().reverse(), units.filter(unit => unit.length === 2).concat(units.filter(unit => unit.length === 1))];
+          for (const order of orders) {
+            const cards = [];
+            for (const unit of order) {
+              cards.push(...unit);
+              if (cards.length < 2 || cards.length >= safe.length || !lengths.has(cards.length) || describe(cards, trump).type !== 'throw') continue;
+              const key = cards.map(face).sort((a, b) => a - b).join(',');
+              if (!seen.has(key)) { seen.add(key); moves.push(cards.slice()); }
+            }
+          }
+        }
       }
     }
     return moves;
@@ -253,7 +298,7 @@ const Rules = (() => {
   }
   function legalMoves(hand, lead, trump, options = {}) {
     const random = options.random || Math.random;
-    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false);
+    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false, options.partialThrows === true);
     const d = describe(lead, trump);
     if (d.n === 1) return hand.map(id => [id]).filter(move => !validate(hand, move, lead, trump));
     const pool = hand.filter(id => group(id, trump) === d.group);
@@ -360,7 +405,7 @@ const Rules = (() => {
     }
     return best;
   }
-  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
+  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, followConstraints, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
 })();
 globalThis.TractorRules = Rules;
 if (typeof module !== 'undefined') module.exports = Rules;
@@ -373,42 +418,85 @@ const Bot = (() => {
     const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
     return R.deck().filter(id => !known.has(id));
   }
-  function sampleHands(view, random) {
+  function sampleHands(view, random, policySignals = []) {
     const hands = [[], [], []];
     hands[view.player] = view.hand.slice();
     const unavailable = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    const dealerShown = new Set();
     for (const entry of view.shown) {
-      if (entry.player === view.player || (entry.player === view.dealer && !view.bottom)) continue;
+      if (entry.player === view.player) continue;
+      if (entry.player === view.dealer && !view.bottom) {
+        // A declared card can have been buried, but cannot have moved to the
+        // other farmer. Keep that public ownership constraint in every sample.
+        for (const id of entry.cards) if (!unavailable.has(id)) dealerShown.add(id);
+        continue;
+      }
       for (const id of entry.cards) if (!unavailable.has(id)) { hands[entry.player].push(id); unavailable.add(id); }
     }
     const unknown = R.deck().filter(id => !unavailable.has(id));
     const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
     if (!view.bottom) targets.push({ p: 3, count: 9 });
     if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
-    const allowed = (id, p) => p === 3 || !view.voids[p].includes(R.group(id, view.trump));
+    const allowed = (id, p, assigned = []) => (!dealerShown.has(id) || p === view.dealer || p === 3)
+      && (p === 3 || (!view.voids[p].includes(R.group(id, view.trump))
+        && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[p] ?? 20))
+        && !(view.forbiddenFaces?.[p] || []).includes(R.face(id))
+        && (!(view.noPairs?.[p] || []).includes(R.group(id, view.trump))
+          || ![...hands[p], ...assigned].some(card => R.face(card) === R.face(id)))));
+    let fallback = null, fallbackWeight = -1;
     for (let attempt = 0; attempt < 40; attempt++) {
       const bins = targets.map(t => ({ ...t, cards: [] }));
       const ordered = R.shuffle(unknown, random).sort((a, b) => targets.filter(t => allowed(a, t.p)).length - targets.filter(t => allowed(b, t.p)).length);
       let success = true;
       for (const id of ordered) {
-        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p));
+        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p, b.cards));
         if (!possible.length) { success = false; break; }
-        let roll = random() * possible.reduce((sum, b) => sum + b.count - b.cards.length, 0);
+        // The bottom is a deliberate discard, not a uniformly random fourth
+        // hand. Keep buried controls possible, but favor ordinary side cards.
+        const burial = !Array.isArray(view.history) ? 1 : R.hard(id) ? 0.02
+          : R.group(id, view.trump) === 4 ? 0.08 : R.rank(id) === 14 ? 0.2 : 1;
+        const weight = bin => (bin.count - bin.cards.length) * (bin.p === 3 ? burial : 1);
+        let roll = random() * possible.reduce((sum, b) => sum + weight(b), 0);
         let selected = possible[possible.length - 1];
-        for (const bin of possible) { roll -= bin.count - bin.cards.length; if (roll < 0) { selected = bin; break; } }
+        for (const bin of possible) { roll -= weight(bin); if (roll < 0) { selected = bin; break; } }
         selected.cards.push(id);
       }
       if (success) {
         let bottom = view.bottom?.slice() || [];
-        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else hands[bin.p].push(...bin.cards); }
-        return { hands, bottom };
+        const sampledHands = hands.map(hand => hand.slice());
+        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else sampledHands[bin.p].push(...bin.cards); }
+        const sample = { hands: sampledHands, bottom };
+        let weight = 1;
+        for (const signal of policySignals) {
+          const pastHand = [...sampledHands[signal.player], ...signal.laterCards];
+          const lead = signal.trick[0], current = signal.trick[R.winningIndex(signal.trick, view.trump)];
+          const moves = R.legalMoves(pastHand, lead, view.trump, { samples: 4, enumerate: 128, random: R.seeded(1) });
+          const friendly = sameTeam(signal.player, current.player, view.dealer);
+          const power = R.strength(current.cards, lead, view.trump);
+          if (friendly ? !signal.trick.some(p => p.player === view.dealer) : moves.some(cards => R.strength(cards, lead, view.trump) > power)) continue;
+          const kept = handProfile(R.remove(pastHand, signal.cards), view.trump), spent = handProfile(signal.cards, view.trump);
+          const observedPoints = R.points(signal.cards), observedCost = signal.cards.reduce((sum, id) => sum + R.level(id, view.trump), 0);
+          const skipped = moves.some(cards => {
+            const rest = handProfile(R.remove(pastHand, cards), view.trump), played = handProfile(cards, view.trump);
+            if (rest.pairs + played.pairs < kept.pairs + spent.pairs || rest.links + played.links < kept.links + spent.links) return false;
+            return (friendly ? R.points(cards) > observedPoints : R.points(cards) < observedPoints) || R.points(cards) === observedPoints
+              && cards.reduce((sum, id) => sum + R.level(id, view.trump), 0) < observedCost;
+          });
+          // Safe feeding and cheap concessions are behavioral evidence, never
+          // rules. Keep a nonzero likelihood for tactical exceptions and errors.
+          if (skipped) weight *= 0.1;
+        }
+        weight = Math.max(0.01, weight);
+        if (!policySignals.length || random() < weight) return sample;
+        if (weight > fallbackWeight) { fallback = sample; fallbackWeight = weight; }
       }
     }
-    return null;
+    return fallback;
   }
   // Shared by move ordering and tactical conservation: a pair and its tractor links
   // have separate value, and initiative matters only when the remaining hand can use it.
-  function handProfile(hand, trump, unseen = null, rivals = null) {
+  function handProfile(hand, trump, unseen = null, rivals = null, cache = null) {
+    if (cache?.has(hand)) return cache.get(hand);
     // In a sampled deal only the opposing side can take our control away.
     // Partner cards and the buried cards must not act as phantom opponents.
     if (rivals) unseen = rivals.flat();
@@ -440,7 +528,9 @@ const Bot = (() => {
         if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
       }
     }
-    return { pairs: pairs.length, links, initiative: Math.min(30, initiative) };
+    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative) };
+    if (cache) cache.set(hand, result);
+    return result;
   }
   function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
     if (!trick.length || player === dealer) return null;
@@ -471,16 +561,44 @@ const Bot = (() => {
     }
     return { winner: winner.player, power, ceiling, safe: power >= ceiling };
   }
+  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null) {
+    if (!trick.length || R.describe(trick[0], trump)?.type !== 'single') return null;
+    if (trick.length === 2 || sameTeam(player, (player + 1) % 3, dealer)) return -1;
+    // Public unseen cards give a conservative bound, not a guessed hand.
+    // A sampled continuation can instead inspect only the last seat's legal
+    // replies: a trump cannot cut when that seat must still follow a side suit.
+    const replies = followHand ? followHand.filter(id => !R.validate(followHand, [id], trick[0], trump)) : unseen;
+    return replies ? Math.max(-1, ...replies.map(id => R.strength([id], trick[0], trump))) : 120;
+  }
+  function sideEntryLoss(hand, cards, trump, unseen) {
+    if (cards.length !== 1 || !unseen) return 0;
+    const group = R.group(cards[0], trump);
+    if (group === 4) return 0;
+    const pool = unseen.filter(id => R.group(id, trump) === group);
+    if (R.level(cards[0], trump) < Math.max(0, ...pool.map(id => R.level(id, trump)))) return 0;
+    // Retaining a master may cash the points behind it after we gain the lead.
+    // This is a bounded positional value, not guaranteed future trick points.
+    const remainingPoints = R.points(hand.filter(id => id !== cards[0] && R.group(id, trump) === group));
+    return Math.min(12, remainingPoints) * 0.8;
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
     const description = R.describe(cards, trump);
     const after = R.remove(hand, cards);
-    const beforeProfile = handProfile(hand, trump, lead ? unseen : null, lead ? rivals : null), afterProfile = handProfile(after, trump, lead ? unseen : null, lead ? rivals : null), playedProfile = handProfile(cards, trump);
+    const beforeProfile = handProfile(hand, trump, unseen, rivals, context.profiles), afterProfile = handProfile(after, trump, unseen, rivals), playedProfile = handProfile(cards, trump);
     const broken = beforeProfile.pairs - afterProfile.pairs - playedProfile.pairs;
     const brokenLinks = Math.max(0, beforeProfile.links - afterProfile.links - playedProfile.links);
-    const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
+    const cost = cards.reduce((s, id) => s + R.level(id, trump) * 0.03 + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
     let score = cards.length * 1.3 - cost - broken * 5 - brokenLinks * 6;
+    if (broken > 0 && beforeProfile.mainPairs && !afterProfile.mainPairs
+      && (rivals || [unseen || []]).some(hand => R.pairs(hand).some(pair => R.group(pair[0], trump) === 4))) {
+      // The last trump pair shields unpaired hard trumps from forced extraction.
+      // Splitting it can turn a later pair follow into losing both jokers at once.
+      // Playing the intact pair is different; only a broken pair incurs this cost.
+      const exposed = after.filter(R.hard).sort(R.byPower(trump)).slice(0, 2);
+      score -= exposed.reduce((sum, id) => sum + Math.max(0, R.level(id, trump) - 14), 0) * 2;
+    }
     if (!lead) {
       const g = R.group(cards[0], trump), power = R.strength(cards, cards, trump);
       // A higher single cannot beat a pair or tractor. In a sampled position,
@@ -502,6 +620,33 @@ const Bot = (() => {
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
+      // A lead spends future entries too. In each hypothetical deal, examine
+      // legal replies: an intact pair can force hard trumps out, whereas a
+      // weak side pair can let the two farmers collect and feed a large pot.
+      score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
+      if (rivals && context.leadForecast) {
+        const replies = rivals.map(rival => R.legalMoves(rival, cards, trump, { samples: 4, enumerate: cards.length <= 2 ? 1024 : 0 }));
+        const spentHard = move => move.filter(R.hard).reduce((sum, id) => sum + Math.max(0, R.level(id, trump) - 14), 0);
+        // Singles and pairs are completely enumerated (at most C(33,2)). For
+        // longer leads use only a proven lower bound from required group counts;
+        // a small response sample cannot establish that a hard card is forced.
+        const forcedHard = replies.map((moves, i) => {
+          if (cards.length <= 2) return Math.min(...moves.map(spentHard));
+          const rival = rivals[i], main = rival.filter(id => R.group(id, trump) === 4);
+          const same = rival.filter(id => R.group(id, trump) === g).length;
+          const needMain = Math.min(main.length, g === 4 ? cards.length : Math.max(0, cards.length - same));
+          return main.map(id => spentHard([id])).sort((a, b) => a - b).slice(0, needMain).reduce((sum, cost) => sum + cost, 0);
+        });
+        score += forcedHard.reduce((sum, cost) => sum + cost, 0) * 1.2;
+        if (player === dealer) {
+          // Each maximum comes from a real legal reply. For longer leads this
+          // is a witnessed feeding risk, not an exhaustive worst-case claim.
+          const points = replies.map(moves => ({ any: Math.max(...moves.map(R.points)),
+            winning: Math.max(-Infinity, ...moves.filter(move => R.strength(move, cards, trump) > power).map(R.points)) }));
+          const exposedPoints = Math.max(0, points[0].winning + points[1].any, points[1].winning + points[0].any);
+          score -= exposedPoints * 0.45;
+        }
+      }
     } else {
       score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
       const current = trick[R.winningIndex(trick, trump)];
@@ -509,14 +654,22 @@ const Bot = (() => {
       const wins = movePower > R.strength(current.cards, lead, trump);
       const friendly = sameTeam(player, current.player, dealer);
       const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
+      const ceiling = context.followCeiling ?? singleFollowCeiling(trick, player, dealer, trump, unseen);
+      const secure = ceiling === null || movePower >= ceiling;
       // Taking points and taking the lead are distinct benefits. Evaluate control
       // after this move, so spending the last key card cannot earn a phantom bonus.
       const teamHolds = support && Math.max(support.power, movePower) >= support.ceiling;
       if (wins) score += friendly
         ? (!support.safe && teamHolds ? 14 + pot * 1.5 : support.safe ? -7 : 0)
-        : 14 + pot * 1.5 + afterProfile.initiative * 1.2;
-      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins ? 0.7 : -0.85);
+        : secure ? 14 + pot * 1.5 + afterProfile.initiative * 1.2 : 4 + pot * 0.25;
+      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins && secure ? 0.7 : -0.85);
       if (!wins && !friendly) score -= 4 + pot * 0.5;
+      if (!wins && !friendly) {
+        // A side-suit master cannot beat an equal earlier card, but can still
+        // provide an entry and cash the scoring cards behind it. Discarding it
+        // for zero points is not automatically cheaper than giving up a ten.
+        score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      }
     }
     return score;
   }
@@ -534,7 +687,7 @@ const Bot = (() => {
     sim.completed++;
     return done;
   }
-  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump)) {
+  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump), unseen = null) {
     if (!trick.length || !moves.length) return moves;
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     const strength = R.strength(winner.cards, lead, trump);
@@ -544,6 +697,15 @@ const Bot = (() => {
     const friendly = sameTeam(player, winner.player, dealer);
     // Both sides conserve points and control when beaten. Feed only an already-safe teammate.
     const safePartner = friendly && support.safe;
+    // When this side cannot win, compare every concession using the same
+    // structure/control evaluation as the rollouts. A minimum-point filter
+    // alone would force splitting a low pair or throwing away a master ace.
+    if (!friendly && !winning.length) {
+      const profiles = new WeakMap();
+      const ranked = moves.map(cards => ({ cards, score: prior(hand, cards, trick, player, dealer, trump, unseen, { support, profiles }) }));
+      const best = Math.max(...ranked.map(move => move.score));
+      return ranked.filter(move => move.score === best).map(move => move.cards);
+    }
     const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
     const economical = losing.filter(cards => R.points(cards) === pointLimit);
     // When we can contest the trick, compare every minimum-point concession with
@@ -561,17 +723,44 @@ const Bot = (() => {
   function rolloutPick(sim, random) {
     const hand = sim.hands[sim.turn];
     const lead = sim.trick[0] || null;
-    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
+    // This is a hypothetical sampled deal: buried cards cannot be played by
+    // an opponent and must not prevent an otherwise safe lead or throw.
+    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h);
     const rivals = sim.hands.filter((hand, player) => !sameTeam(sim.turn, player, sim.dealer));
     const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
-    const available = R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    const followCeiling = singleFollowCeiling(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[(sim.turn + 1) % 3]);
+    const profiles = new WeakMap();
+    const small = sim.hands.every(cards => cards.length <= 3);
+    const available = small ? smallMoves(hand, lead, sim.trump, unseen) : R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    if (small) {
+      // Each of the three simulated seats optimizes its own side's final result.
+      // Finish all alternatives before using an exact answer; a timed-out search
+      // falls back to the same complete legal move set, never a partial ranking.
+      const view = { player: sim.turn, dealer: sim.dealer, bid: sim.bid || 120, failed: sim.failed || [false, false, false] };
+      const search = { deadline: performance.now() + 100, nodes: 0, cache: new Map() };
+      const defaults = new Set(tacticalMoves(hand, available, sim.trick, sim.turn, sim.dealer, sim.trump, support, unseen).map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
+      let best = null, bestValue = -Infinity, bestDefault = false, bestPrior = -Infinity;
+      try {
+        for (const move of available) {
+          const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(entry => ({ ...entry, cards: entry.cards.slice() })) };
+          advance(next, sim.turn, move);
+          const value = endgame(next, view, search);
+          const preferred = defaults.has(move.map(R.face).sort((a, b) => a - b).join(','));
+          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
+          if (value > bestValue || value === bestValue && (Number(preferred) > Number(bestDefault) || preferred === bestDefault && score > bestPrior)) {
+            best = move; bestValue = value; bestDefault = preferred; bestPrior = score;
+          }
+        }
+        if (best) return best;
+      } catch (error) { if (error !== searchExpired) throw error; }
+    }
     // Simulations must also consider conceding points to preserve a decisive
     // pair or tractor. Economical defaults are tie-breaks, never a move filter.
     const moves = available;
     const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support });
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
       if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
         const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
         score += (ownControl - partnerControl) * 1.2;
@@ -617,7 +806,9 @@ const Bot = (() => {
     const unseen = sim.hands.flatMap((cards, p) => p === player ? [] : cards);
     const rivals = sim.hands.filter((cards, p) => !sameTeam(player, p, sim.dealer));
     const support = farmerSupport(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
-    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support }) })).sort((a, b) => b.prior - a.prior);
+    const followCeiling = singleFollowCeiling(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[(player + 1) % 3]);
+    const profiles = new WeakMap();
+    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling }) })).sort((a, b) => b.prior - a.prior);
     if (!moves.length) throw new Error('残局没有合法出牌');
     const maximize = sameTeam(player, view.player, view.dealer);
     let value = maximize ? -Infinity : Infinity;
@@ -643,25 +834,54 @@ const Bot = (() => {
     const random = R.seeded(view.seed);
     const unseen = unknownCards(view);
     const lead = view.trick[0] || null;
-    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen });
+    // Expand partial trump throws at the real decision, where alternatives
+    // share complete sampled continuations. Keep the cheaper rollout move
+    // set so this does not multiply the cost of every future simulated turn.
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
-    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support);
+    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
+    const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
+    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen);
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
-    // Priors order the work and break outcome ties; they never replace a simulation.
+    // Every option is simulated. Lead and follow priors provide a conservative
+    // baseline when paired outcomes cannot reliably distinguish the alternatives.
     // Every generated, distinct candidate receives the same first hidden-hand sample.
-    const ranked = candidates.map(cards => ({ cards, preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support }), wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity })).sort((a, b) => b.prior - a.prior);
+    const profiles = new WeakMap();
+    const structure = handProfile(view.hand, view.trump);
+    const ranked = candidates.map(cards => {
+      const rest = handProfile(R.remove(view.hand, cards), view.trump), played = handProfile(cards, view.trump);
+      const power = lead ? R.strength(cards, lead, view.trump) : -1;
+      const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
+        && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
+      const entryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+        ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
+      return { cards, certainCapture, entryLoss, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+        preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
+    }).sort((a, b) => b.prior - a.prior);
+    let baseline = ranked.find(candidate => candidate.preferred);
+    const fullyKnown = Boolean(view.bottom) && new Set([...view.hand, ...view.played, ...view.bottom, ...view.shown.flatMap(entry => entry.cards)]).size === 108;
+    const policySignals = [], history = view.history || [];
+    if (!fullyKnown) for (let i = history.length - 1; i >= Math.max(0, history.length - 4); i--) {
+      const plays = history[i].plays;
+      for (let j = 1; j < plays.length; j++) {
+        const play = plays[j];
+        if (play.player === view.player) continue;
+        const later = [...history.slice(i).flatMap(round => round.plays), ...view.trick];
+        policySignals.push({ player: play.player, cards: play.cards, trick: plays.slice(0, j), laterCards: later.filter(p => p.player === play.player).flatMap(p => p.cards) });
+      }
+    }
     let active = ranked.slice(), samples = 0, exactSamples = 0, nodes = 0;
     // Finish at least one complete paired batch even if a slow device exceeds
     // the soft time budget. Forced moves also receive an actual win estimate.
     while (samples < (view.maxSamples || 512) && (!samples || performance.now() < deadline)) {
-      const sample = sampleHands(view, random);
+      const sample = sampleHands(view, random, policySignals);
       if (!sample) break;
       const sampleSeed = Math.floor(random() * 0x7fffffff);
       const position = candidate => {
-        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, bid: view.bid, failed: view.failed, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
         advance(sim, view.player, candidate.cards); return sim;
       };
       let values = [], exact = sample.hands.every(hand => hand.length <= 6);
@@ -693,12 +913,18 @@ const Bot = (() => {
       }
       if (values.length !== active.length) break;
       const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
+      const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
+        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null };
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
         candidate.wins += Number(won);
         candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
         candidate.visits++;
+        if (!lead || support) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
+          leadContext);
+        if (support && Math.max(leadContext.support.power, R.strength(candidate.cards, lead, view.trump)) >= leadContext.support.ceiling) candidate.secured++;
+        if (baseline) candidate.outcomes.push(values[i]);
         if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
       });
       if (exact) exactSamples++;
@@ -708,14 +934,63 @@ const Bot = (() => {
           return { candidate, ...winBounds(candidate.wins, candidate.visits) };
         });
         const bestLower = Math.max(...bounds.map(entry => entry.lower));
-        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred).map(entry => entry.candidate);
+        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred || entry.candidate === baseline || support).map(entry => entry.candidate);
       }
     }
     if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
+    // Lead conservation must use possible hands, not a fictitious opponent
+    // holding every unseen card. All leading candidates share these samples.
+    if (!lead && samples >= 6) baseline = ranked.filter(candidate => candidate.preferred).sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    // Before the dealer follows, unseen trumps do not mean the dealer is
+    // certainly void. Use legal replies from the same possible deals to judge
+    // feeding or a cheap relay; retain the public-safe default for tiny samples.
+    if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
-    const best = active[0];
+    let best = active[0], selectionReason = 'ranked-outcomes';
+    if (baseline && !(fullyKnown && exactSamples === samples)) {
+      best = baseline; selectionReason = 'tactical-baseline';
+      // Compare paired terminal outcomes, not two unrelated marginal rates.
+      // This is a filter for simulation noise, not a calibrated real-game odds
+      // guarantee. Both halves must agree; a single lucky rollout is insufficient.
+      // Keep all legal options, including structural sacrifices and team relays.
+      for (const candidate of active) {
+        if (candidate === baseline) break;
+        let gains = 0, losses = 0, points = 0, squares = 0;
+        const halfWins = [0, 0], halfPoints = [0, 0], count = candidate.outcomes.length;
+        for (let i = 0; i < count; i++) {
+          const deltaWin = Number(candidate.outcomes[i] > 0) - Number(baseline.outcomes[i] > 0);
+          const deltaPoints = candidate.outcomes[i] - baseline.outcomes[i] - 1700 * deltaWin;
+          gains += Number(deltaWin > 0); losses += Number(deltaWin < 0);
+          points += deltaPoints; squares += deltaPoints * deltaPoints;
+          const half = i < Math.floor(count / 2) ? 0 : 1;
+          halfWins[half] += deltaWin; halfPoints[half] += deltaPoints;
+        }
+        const discordant = gains + losses, mean = points / count;
+        const error = count > 1 ? Math.sqrt(Math.max(0, squares - points * points / count) / (count - 1) / count) : Infinity;
+        const winEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
+        const extraDamage = candidate.brokenPairs > baseline.brokenPairs || candidate.brokenLinks > baseline.brokenLinks;
+        // A noisy points-only gain cannot justify breaking a pair/tractor when
+        // a structurally intact follow already serves the team. Proven terminal
+        // wins and exact continuations can still justify a necessary sacrifice.
+        const structuralProof = candidate.exactVisits === count && candidate.outcomes.every((value, i) => value > baseline.outcomes[i]);
+        // When it does not protect more sampled tricks, withholding score
+        // also needs winning evidence or exact proof, not a noisy points bonus.
+        const missedFeed = support && R.points(candidate.cards) < R.points(baseline.cards) && candidate.secured <= baseline.secured;
+        // Do not trade a public-proof scoring capture for noisy extra points.
+        // A consistent terminal win advantage or exact proof can still justify
+        // preserving a decisive control card instead of cashing this trick.
+        const missedCapture = baseline.certainCapture && !candidate.certainCapture
+          && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
+        const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        const pointEvidence = count >= 6 && discordant === 0 && mean > 1.96 * error && halfPoints.every(value => value > 0)
+          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : 'paired-point-advantage'; break; }
+      }
+    }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred })) : undefined };
+      selectionReason, baselineCards: baseline?.cards,
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, certainCapture: candidate.certainCapture, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -730,7 +1005,7 @@ const Bot = (() => {
       const all = sample.hands[view.player].concat(sample.bottom);
       const buried = R.bury(all, view.trump, random, 64);
       sample.hands[view.player] = R.remove(all, buried);
-      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
+      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, bid: view.bid || 120, failed: view.failed, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
       for (let step = 0; step < 100 && !sim.hands.every(h => h.length === 0); step++) {
         const move = rolloutPick(sim, random);
         if (!move) break;
@@ -892,13 +1167,39 @@ const Rules = (() => {
     const winner = plays[winningIndex(plays, trump)];
     return winner.player !== dealer && winner.cards.every(id => group(id, trump) === 4);
   }
+  function followConstraints(history, trick, trump) {
+    const ceilings = [20, 20, 20];
+    const noPairs = [[], [], []], forbidden = [new Set(), new Set(), new Set()];
+    for (const round of [...history, { plays: trick }]) {
+      const plays = round.plays, lead = plays[0] && describe(plays[0], trump);
+      if (!lead || !['pair', 'tractor'].includes(lead.type)) continue;
+      for (const play of plays.slice(1)) {
+        for (const g of new Set([lead.group, 4])) {
+          const followed = play.cards.filter(id => group(id, trump) === g);
+          const ps = pairs(followed);
+          if (ps.length < Math.floor(followed.length / 2)) {
+            if (!noPairs[play.player].includes(g)) noPairs[play.player].push(g);
+            for (const id of remove(followed, ps.flat())) forbidden[play.player].add(face(id));
+          }
+        }
+        const main = play.cards.filter(id => group(id, trump) === 4);
+        const singles = remove(main, pairs(main).flat());
+        if (!singles.length) continue;
+        // Structured follows must use the highest remaining hard trumps after
+        // the selected pairs. A soft single proves no hard trump remains.
+        const ceiling = singles.some(id => !hard(id)) ? 14 : Math.min(...singles.map(id => level(id, trump)));
+        ceilings[play.player] = Math.min(ceilings[play.player], ceiling);
+      }
+    }
+    return { hardCeilings: ceilings, noPairs, forbiddenFaces: forbidden.map(set => [...set]) };
+  }
   // 分牌以 5 分递增；守 200 时，闲家取得任何分数即破庄。
   const farmerTarget = bid => bid === 200 ? 5 : 200 - bid;
   function result(dealer, bid, farmerScore, failed) {
     const dealerWins = !failed[dealer] && farmerScore < farmerTarget(bid);
     return { dealerWins, wins: [0, 1, 2].map(p => !failed[p] && (p === dealer ? dealerWins : !dealerWins)) };
   }
-  function leadMoves(hand, trump, unseen = [], allowThrow = true) {
+  function leadMoves(hand, trump, unseen = [], allowThrow = true, partialThrows = false) {
     const moves = [];
     const faces = new Set();
     hand.forEach(id => { if (!faces.has(face(id))) moves.push([id]); faces.add(face(id)); });
@@ -920,6 +1221,25 @@ const Rules = (() => {
         const distinct = safe.filter((id, i) => safe.findIndex(x => face(x) === face(id)) === i);
         if (safe.length >= 2 && describe(safe, trump).type === 'throw') moves.push(safe);
         if (distinct.length >= 2) { moves.push(distinct); if (distinct.length > 2) moves.push(distinct.slice(0, 2)); }
+        if (partialThrows && g === 4 && safe.length >= 4) {
+          // Compare clearing some trumps while retaining entries with spending
+          // the entire safe group. Keep each face together so a cheap subset
+          // does not silently split a pair. Three orders cover cashing high
+          // cards, retaining high cards, and cashing pairs with spare singles.
+          const units = distinct.map(id => safe.filter(card => face(card) === face(id)));
+          const lengths = new Set([3, 4, 6, 8, Math.floor(safe.length / 2), safe.length - 2, safe.length - 1]);
+          const seen = new Set(moves.map(cards => cards.map(face).sort((a, b) => a - b).join(',')));
+          const orders = [units, units.slice().reverse(), units.filter(unit => unit.length === 2).concat(units.filter(unit => unit.length === 1))];
+          for (const order of orders) {
+            const cards = [];
+            for (const unit of order) {
+              cards.push(...unit);
+              if (cards.length < 2 || cards.length >= safe.length || !lengths.has(cards.length) || describe(cards, trump).type !== 'throw') continue;
+              const key = cards.map(face).sort((a, b) => a - b).join(',');
+              if (!seen.has(key)) { seen.add(key); moves.push(cards.slice()); }
+            }
+          }
+        }
       }
     }
     return moves;
@@ -944,7 +1264,7 @@ const Rules = (() => {
   }
   function legalMoves(hand, lead, trump, options = {}) {
     const random = options.random || Math.random;
-    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false);
+    if (!lead) return leadMoves(hand, trump, options.unseen || [], options.allowThrow !== false, options.partialThrows === true);
     const d = describe(lead, trump);
     if (d.n === 1) return hand.map(id => [id]).filter(move => !validate(hand, move, lead, trump));
     const pool = hand.filter(id => group(id, trump) === d.group);
@@ -1051,7 +1371,7 @@ const Rules = (() => {
     }
     return best;
   }
-  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
+  return { SUITS, SUIT_NAMES, deck, face, suit, rank, hard, group, level, value, points, label, shortRank, sortHand, byPower, remove, pairs, seeded, shuffle, describe, typeName, validate, strength, winningIndex, throwFailure, captureBottom, followConstraints, farmerTarget, result, leadMoves, legalMoves, shouldDeclare, bidLimit, bury };
 })();
 globalThis.TractorRules = Rules;
 if (typeof module !== 'undefined') module.exports = Rules;
@@ -1064,42 +1384,85 @@ const Bot = (() => {
     const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
     return R.deck().filter(id => !known.has(id));
   }
-  function sampleHands(view, random) {
+  function sampleHands(view, random, policySignals = []) {
     const hands = [[], [], []];
     hands[view.player] = view.hand.slice();
     const unavailable = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
+    const dealerShown = new Set();
     for (const entry of view.shown) {
-      if (entry.player === view.player || (entry.player === view.dealer && !view.bottom)) continue;
+      if (entry.player === view.player) continue;
+      if (entry.player === view.dealer && !view.bottom) {
+        // A declared card can have been buried, but cannot have moved to the
+        // other farmer. Keep that public ownership constraint in every sample.
+        for (const id of entry.cards) if (!unavailable.has(id)) dealerShown.add(id);
+        continue;
+      }
       for (const id of entry.cards) if (!unavailable.has(id)) { hands[entry.player].push(id); unavailable.add(id); }
     }
     const unknown = R.deck().filter(id => !unavailable.has(id));
     const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
     if (!view.bottom) targets.push({ p: 3, count: 9 });
     if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
-    const allowed = (id, p) => p === 3 || !view.voids[p].includes(R.group(id, view.trump));
+    const allowed = (id, p, assigned = []) => (!dealerShown.has(id) || p === view.dealer || p === 3)
+      && (p === 3 || (!view.voids[p].includes(R.group(id, view.trump))
+        && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[p] ?? 20))
+        && !(view.forbiddenFaces?.[p] || []).includes(R.face(id))
+        && (!(view.noPairs?.[p] || []).includes(R.group(id, view.trump))
+          || ![...hands[p], ...assigned].some(card => R.face(card) === R.face(id)))));
+    let fallback = null, fallbackWeight = -1;
     for (let attempt = 0; attempt < 40; attempt++) {
       const bins = targets.map(t => ({ ...t, cards: [] }));
       const ordered = R.shuffle(unknown, random).sort((a, b) => targets.filter(t => allowed(a, t.p)).length - targets.filter(t => allowed(b, t.p)).length);
       let success = true;
       for (const id of ordered) {
-        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p));
+        const possible = bins.filter(b => b.cards.length < b.count && allowed(id, b.p, b.cards));
         if (!possible.length) { success = false; break; }
-        let roll = random() * possible.reduce((sum, b) => sum + b.count - b.cards.length, 0);
+        // The bottom is a deliberate discard, not a uniformly random fourth
+        // hand. Keep buried controls possible, but favor ordinary side cards.
+        const burial = !Array.isArray(view.history) ? 1 : R.hard(id) ? 0.02
+          : R.group(id, view.trump) === 4 ? 0.08 : R.rank(id) === 14 ? 0.2 : 1;
+        const weight = bin => (bin.count - bin.cards.length) * (bin.p === 3 ? burial : 1);
+        let roll = random() * possible.reduce((sum, b) => sum + weight(b), 0);
         let selected = possible[possible.length - 1];
-        for (const bin of possible) { roll -= bin.count - bin.cards.length; if (roll < 0) { selected = bin; break; } }
+        for (const bin of possible) { roll -= weight(bin); if (roll < 0) { selected = bin; break; } }
         selected.cards.push(id);
       }
       if (success) {
         let bottom = view.bottom?.slice() || [];
-        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else hands[bin.p].push(...bin.cards); }
-        return { hands, bottom };
+        const sampledHands = hands.map(hand => hand.slice());
+        for (const bin of bins) { if (bin.p === 3) bottom = bin.cards; else sampledHands[bin.p].push(...bin.cards); }
+        const sample = { hands: sampledHands, bottom };
+        let weight = 1;
+        for (const signal of policySignals) {
+          const pastHand = [...sampledHands[signal.player], ...signal.laterCards];
+          const lead = signal.trick[0], current = signal.trick[R.winningIndex(signal.trick, view.trump)];
+          const moves = R.legalMoves(pastHand, lead, view.trump, { samples: 4, enumerate: 128, random: R.seeded(1) });
+          const friendly = sameTeam(signal.player, current.player, view.dealer);
+          const power = R.strength(current.cards, lead, view.trump);
+          if (friendly ? !signal.trick.some(p => p.player === view.dealer) : moves.some(cards => R.strength(cards, lead, view.trump) > power)) continue;
+          const kept = handProfile(R.remove(pastHand, signal.cards), view.trump), spent = handProfile(signal.cards, view.trump);
+          const observedPoints = R.points(signal.cards), observedCost = signal.cards.reduce((sum, id) => sum + R.level(id, view.trump), 0);
+          const skipped = moves.some(cards => {
+            const rest = handProfile(R.remove(pastHand, cards), view.trump), played = handProfile(cards, view.trump);
+            if (rest.pairs + played.pairs < kept.pairs + spent.pairs || rest.links + played.links < kept.links + spent.links) return false;
+            return (friendly ? R.points(cards) > observedPoints : R.points(cards) < observedPoints) || R.points(cards) === observedPoints
+              && cards.reduce((sum, id) => sum + R.level(id, view.trump), 0) < observedCost;
+          });
+          // Safe feeding and cheap concessions are behavioral evidence, never
+          // rules. Keep a nonzero likelihood for tactical exceptions and errors.
+          if (skipped) weight *= 0.1;
+        }
+        weight = Math.max(0.01, weight);
+        if (!policySignals.length || random() < weight) return sample;
+        if (weight > fallbackWeight) { fallback = sample; fallbackWeight = weight; }
       }
     }
-    return null;
+    return fallback;
   }
   // Shared by move ordering and tactical conservation: a pair and its tractor links
   // have separate value, and initiative matters only when the remaining hand can use it.
-  function handProfile(hand, trump, unseen = null, rivals = null) {
+  function handProfile(hand, trump, unseen = null, rivals = null, cache = null) {
+    if (cache?.has(hand)) return cache.get(hand);
     // In a sampled deal only the opposing side can take our control away.
     // Partner cards and the buried cards must not act as phantom opponents.
     if (rivals) unseen = rivals.flat();
@@ -1131,7 +1494,9 @@ const Bot = (() => {
         if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
       }
     }
-    return { pairs: pairs.length, links, initiative: Math.min(30, initiative) };
+    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative) };
+    if (cache) cache.set(hand, result);
+    return result;
   }
   function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
     if (!trick.length || player === dealer) return null;
@@ -1162,16 +1527,44 @@ const Bot = (() => {
     }
     return { winner: winner.player, power, ceiling, safe: power >= ceiling };
   }
+  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null) {
+    if (!trick.length || R.describe(trick[0], trump)?.type !== 'single') return null;
+    if (trick.length === 2 || sameTeam(player, (player + 1) % 3, dealer)) return -1;
+    // Public unseen cards give a conservative bound, not a guessed hand.
+    // A sampled continuation can instead inspect only the last seat's legal
+    // replies: a trump cannot cut when that seat must still follow a side suit.
+    const replies = followHand ? followHand.filter(id => !R.validate(followHand, [id], trick[0], trump)) : unseen;
+    return replies ? Math.max(-1, ...replies.map(id => R.strength([id], trick[0], trump))) : 120;
+  }
+  function sideEntryLoss(hand, cards, trump, unseen) {
+    if (cards.length !== 1 || !unseen) return 0;
+    const group = R.group(cards[0], trump);
+    if (group === 4) return 0;
+    const pool = unseen.filter(id => R.group(id, trump) === group);
+    if (R.level(cards[0], trump) < Math.max(0, ...pool.map(id => R.level(id, trump)))) return 0;
+    // Retaining a master may cash the points behind it after we gain the lead.
+    // This is a bounded positional value, not guaranteed future trick points.
+    const remainingPoints = R.points(hand.filter(id => id !== cards[0] && R.group(id, trump) === group));
+    return Math.min(12, remainingPoints) * 0.8;
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
     const description = R.describe(cards, trump);
     const after = R.remove(hand, cards);
-    const beforeProfile = handProfile(hand, trump, lead ? unseen : null, lead ? rivals : null), afterProfile = handProfile(after, trump, lead ? unseen : null, lead ? rivals : null), playedProfile = handProfile(cards, trump);
+    const beforeProfile = handProfile(hand, trump, unseen, rivals, context.profiles), afterProfile = handProfile(after, trump, unseen, rivals), playedProfile = handProfile(cards, trump);
     const broken = beforeProfile.pairs - afterProfile.pairs - playedProfile.pairs;
     const brokenLinks = Math.max(0, beforeProfile.links - afterProfile.links - playedProfile.links);
-    const cost = cards.reduce((s, id) => s + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
+    const cost = cards.reduce((s, id) => s + R.level(id, trump) * 0.03 + Math.max(0, R.level(id, trump) - 10) * (R.group(id, trump) === 4 ? 0.7 : 0.3), 0);
     let score = cards.length * 1.3 - cost - broken * 5 - brokenLinks * 6;
+    if (broken > 0 && beforeProfile.mainPairs && !afterProfile.mainPairs
+      && (rivals || [unseen || []]).some(hand => R.pairs(hand).some(pair => R.group(pair[0], trump) === 4))) {
+      // The last trump pair shields unpaired hard trumps from forced extraction.
+      // Splitting it can turn a later pair follow into losing both jokers at once.
+      // Playing the intact pair is different; only a broken pair incurs this cost.
+      const exposed = after.filter(R.hard).sort(R.byPower(trump)).slice(0, 2);
+      score -= exposed.reduce((sum, id) => sum + Math.max(0, R.level(id, trump) - 14), 0) * 2;
+    }
     if (!lead) {
       const g = R.group(cards[0], trump), power = R.strength(cards, cards, trump);
       // A higher single cannot beat a pair or tractor. In a sampled position,
@@ -1193,6 +1586,33 @@ const Bot = (() => {
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
+      // A lead spends future entries too. In each hypothetical deal, examine
+      // legal replies: an intact pair can force hard trumps out, whereas a
+      // weak side pair can let the two farmers collect and feed a large pot.
+      score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
+      if (rivals && context.leadForecast) {
+        const replies = rivals.map(rival => R.legalMoves(rival, cards, trump, { samples: 4, enumerate: cards.length <= 2 ? 1024 : 0 }));
+        const spentHard = move => move.filter(R.hard).reduce((sum, id) => sum + Math.max(0, R.level(id, trump) - 14), 0);
+        // Singles and pairs are completely enumerated (at most C(33,2)). For
+        // longer leads use only a proven lower bound from required group counts;
+        // a small response sample cannot establish that a hard card is forced.
+        const forcedHard = replies.map((moves, i) => {
+          if (cards.length <= 2) return Math.min(...moves.map(spentHard));
+          const rival = rivals[i], main = rival.filter(id => R.group(id, trump) === 4);
+          const same = rival.filter(id => R.group(id, trump) === g).length;
+          const needMain = Math.min(main.length, g === 4 ? cards.length : Math.max(0, cards.length - same));
+          return main.map(id => spentHard([id])).sort((a, b) => a - b).slice(0, needMain).reduce((sum, cost) => sum + cost, 0);
+        });
+        score += forcedHard.reduce((sum, cost) => sum + cost, 0) * 1.2;
+        if (player === dealer) {
+          // Each maximum comes from a real legal reply. For longer leads this
+          // is a witnessed feeding risk, not an exhaustive worst-case claim.
+          const points = replies.map(moves => ({ any: Math.max(...moves.map(R.points)),
+            winning: Math.max(-Infinity, ...moves.filter(move => R.strength(move, cards, trump) > power).map(R.points)) }));
+          const exposedPoints = Math.max(0, points[0].winning + points[1].any, points[1].winning + points[0].any);
+          score -= exposedPoints * 0.45;
+        }
+      }
     } else {
       score += (afterProfile.initiative - beforeProfile.initiative) * 1.2;
       const current = trick[R.winningIndex(trick, trump)];
@@ -1200,14 +1620,22 @@ const Bot = (() => {
       const wins = movePower > R.strength(current.cards, lead, trump);
       const friendly = sameTeam(player, current.player, dealer);
       const pot = trick.reduce((s, p) => s + R.points(p.cards), 0);
+      const ceiling = context.followCeiling ?? singleFollowCeiling(trick, player, dealer, trump, unseen);
+      const secure = ceiling === null || movePower >= ceiling;
       // Taking points and taking the lead are distinct benefits. Evaluate control
       // after this move, so spending the last key card cannot earn a phantom bonus.
       const teamHolds = support && Math.max(support.power, movePower) >= support.ceiling;
       if (wins) score += friendly
         ? (!support.safe && teamHolds ? 14 + pot * 1.5 : support.safe ? -7 : 0)
-        : 14 + pot * 1.5 + afterProfile.initiative * 1.2;
-      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins ? 0.7 : -0.85);
+        : secure ? 14 + pot * 1.5 + afterProfile.initiative * 1.2 : 4 + pot * 0.25;
+      score += R.points(cards) * (friendly ? (teamHolds ? 1.2 : -0.85) : wins && secure ? 0.7 : -0.85);
       if (!wins && !friendly) score -= 4 + pot * 0.5;
+      if (!wins && !friendly) {
+        // A side-suit master cannot beat an equal earlier card, but can still
+        // provide an entry and cash the scoring cards behind it. Discarding it
+        // for zero points is not automatically cheaper than giving up a ten.
+        score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      }
     }
     return score;
   }
@@ -1225,7 +1653,7 @@ const Bot = (() => {
     sim.completed++;
     return done;
   }
-  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump)) {
+  function tacticalMoves(hand, moves, trick, player, dealer, trump, support = farmerSupport(trick, player, dealer, trump), unseen = null) {
     if (!trick.length || !moves.length) return moves;
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     const strength = R.strength(winner.cards, lead, trump);
@@ -1235,6 +1663,15 @@ const Bot = (() => {
     const friendly = sameTeam(player, winner.player, dealer);
     // Both sides conserve points and control when beaten. Feed only an already-safe teammate.
     const safePartner = friendly && support.safe;
+    // When this side cannot win, compare every concession using the same
+    // structure/control evaluation as the rollouts. A minimum-point filter
+    // alone would force splitting a low pair or throwing away a master ace.
+    if (!friendly && !winning.length) {
+      const profiles = new WeakMap();
+      const ranked = moves.map(cards => ({ cards, score: prior(hand, cards, trick, player, dealer, trump, unseen, { support, profiles }) }));
+      const best = Math.max(...ranked.map(move => move.score));
+      return ranked.filter(move => move.score === best).map(move => move.cards);
+    }
     const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
     const economical = losing.filter(cards => R.points(cards) === pointLimit);
     // When we can contest the trick, compare every minimum-point concession with
@@ -1252,17 +1689,44 @@ const Bot = (() => {
   function rolloutPick(sim, random) {
     const hand = sim.hands[sim.turn];
     const lead = sim.trick[0] || null;
-    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h).concat(sim.bottom);
+    // This is a hypothetical sampled deal: buried cards cannot be played by
+    // an opponent and must not prevent an otherwise safe lead or throw.
+    const unseen = sim.hands.flatMap((h, p) => p === sim.turn ? [] : h);
     const rivals = sim.hands.filter((hand, player) => !sameTeam(sim.turn, player, sim.dealer));
     const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
-    const available = R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    const followCeiling = singleFollowCeiling(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[(sim.turn + 1) % 3]);
+    const profiles = new WeakMap();
+    const small = sim.hands.every(cards => cards.length <= 3);
+    const available = small ? smallMoves(hand, lead, sim.trump, unseen) : R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
+    if (small) {
+      // Each of the three simulated seats optimizes its own side's final result.
+      // Finish all alternatives before using an exact answer; a timed-out search
+      // falls back to the same complete legal move set, never a partial ranking.
+      const view = { player: sim.turn, dealer: sim.dealer, bid: sim.bid || 120, failed: sim.failed || [false, false, false] };
+      const search = { deadline: performance.now() + 100, nodes: 0, cache: new Map() };
+      const defaults = new Set(tacticalMoves(hand, available, sim.trick, sim.turn, sim.dealer, sim.trump, support, unseen).map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
+      let best = null, bestValue = -Infinity, bestDefault = false, bestPrior = -Infinity;
+      try {
+        for (const move of available) {
+          const next = { ...sim, hands: sim.hands.map(cards => cards.slice()), trick: sim.trick.map(entry => ({ ...entry, cards: entry.cards.slice() })) };
+          advance(next, sim.turn, move);
+          const value = endgame(next, view, search);
+          const preferred = defaults.has(move.map(R.face).sort((a, b) => a - b).join(','));
+          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
+          if (value > bestValue || value === bestValue && (Number(preferred) > Number(bestDefault) || preferred === bestDefault && score > bestPrior)) {
+            best = move; bestValue = value; bestDefault = preferred; bestPrior = score;
+          }
+        }
+        if (best) return best;
+      } catch (error) { if (error !== searchExpired) throw error; }
+    }
     // Simulations must also consider conceding points to preserve a decisive
     // pair or tractor. Economical defaults are tie-breaks, never a move filter.
     const moves = available;
     const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support });
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
       if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
         const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
         score += (ownControl - partnerControl) * 1.2;
@@ -1308,7 +1772,9 @@ const Bot = (() => {
     const unseen = sim.hands.flatMap((cards, p) => p === player ? [] : cards);
     const rivals = sim.hands.filter((cards, p) => !sameTeam(player, p, sim.dealer));
     const support = farmerSupport(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
-    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support }) })).sort((a, b) => b.prior - a.prior);
+    const followCeiling = singleFollowCeiling(sim.trick, player, sim.dealer, sim.trump, unseen, sim.hands[(player + 1) % 3]);
+    const profiles = new WeakMap();
+    const moves = smallMoves(hand, lead, sim.trump, unseen).map(cards => ({ cards, prior: prior(hand, cards, sim.trick, player, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling }) })).sort((a, b) => b.prior - a.prior);
     if (!moves.length) throw new Error('残局没有合法出牌');
     const maximize = sameTeam(player, view.player, view.dealer);
     let value = maximize ? -Infinity : Infinity;
@@ -1334,25 +1800,54 @@ const Bot = (() => {
     const random = R.seeded(view.seed);
     const unseen = unknownCards(view);
     const lead = view.trick[0] || null;
-    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen });
+    // Expand partial trump throws at the real decision, where alternatives
+    // share complete sampled continuations. Keep the cheaper rollout move
+    // set so this does not multiply the cost of every future simulated turn.
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: 256, unseen, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
-    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support);
+    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
+    const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
+    const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen);
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
-    // Priors order the work and break outcome ties; they never replace a simulation.
+    // Every option is simulated. Lead and follow priors provide a conservative
+    // baseline when paired outcomes cannot reliably distinguish the alternatives.
     // Every generated, distinct candidate receives the same first hidden-hand sample.
-    const ranked = candidates.map(cards => ({ cards, preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support }), wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity })).sort((a, b) => b.prior - a.prior);
+    const profiles = new WeakMap();
+    const structure = handProfile(view.hand, view.trump);
+    const ranked = candidates.map(cards => {
+      const rest = handProfile(R.remove(view.hand, cards), view.trump), played = handProfile(cards, view.trump);
+      const power = lead ? R.strength(cards, lead, view.trump) : -1;
+      const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
+        && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
+      const entryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+        ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
+      return { cards, certainCapture, entryLoss, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+        preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
+    }).sort((a, b) => b.prior - a.prior);
+    let baseline = ranked.find(candidate => candidate.preferred);
+    const fullyKnown = Boolean(view.bottom) && new Set([...view.hand, ...view.played, ...view.bottom, ...view.shown.flatMap(entry => entry.cards)]).size === 108;
+    const policySignals = [], history = view.history || [];
+    if (!fullyKnown) for (let i = history.length - 1; i >= Math.max(0, history.length - 4); i--) {
+      const plays = history[i].plays;
+      for (let j = 1; j < plays.length; j++) {
+        const play = plays[j];
+        if (play.player === view.player) continue;
+        const later = [...history.slice(i).flatMap(round => round.plays), ...view.trick];
+        policySignals.push({ player: play.player, cards: play.cards, trick: plays.slice(0, j), laterCards: later.filter(p => p.player === play.player).flatMap(p => p.cards) });
+      }
+    }
     let active = ranked.slice(), samples = 0, exactSamples = 0, nodes = 0;
     // Finish at least one complete paired batch even if a slow device exceeds
     // the soft time budget. Forced moves also receive an actual win estimate.
     while (samples < (view.maxSamples || 512) && (!samples || performance.now() < deadline)) {
-      const sample = sampleHands(view, random);
+      const sample = sampleHands(view, random, policySignals);
       if (!sample) break;
       const sampleSeed = Math.floor(random() * 0x7fffffff);
       const position = candidate => {
-        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
+        const sim = { hands: sample.hands.map(h => h.slice()), bottom: sample.bottom, dealer: view.dealer, trump: view.trump, bid: view.bid, failed: view.failed, farmerScore: view.farmerScore, turn: view.player, trick: view.trick.map(p => ({ ...p, cards: p.cards.slice() })), completed: 0 };
         advance(sim, view.player, candidate.cards); return sim;
       };
       let values = [], exact = sample.hands.every(hand => hand.length <= 6);
@@ -1384,12 +1879,18 @@ const Bot = (() => {
       }
       if (values.length !== active.length) break;
       const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
+      const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
+        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null };
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
         candidate.wins += Number(won);
         candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
         candidate.visits++;
+        if (!lead || support) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
+          leadContext);
+        if (support && Math.max(leadContext.support.power, R.strength(candidate.cards, lead, view.trump)) >= leadContext.support.ceiling) candidate.secured++;
+        if (baseline) candidate.outcomes.push(values[i]);
         if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
       });
       if (exact) exactSamples++;
@@ -1399,14 +1900,63 @@ const Bot = (() => {
           return { candidate, ...winBounds(candidate.wins, candidate.visits) };
         });
         const bestLower = Math.max(...bounds.map(entry => entry.lower));
-        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred).map(entry => entry.candidate);
+        active = bounds.filter(entry => entry.upper >= bestLower || entry.candidate.preferred || entry.candidate === baseline || support).map(entry => entry.candidate);
       }
     }
     if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
+    // Lead conservation must use possible hands, not a fictitious opponent
+    // holding every unseen card. All leading candidates share these samples.
+    if (!lead && samples >= 6) baseline = ranked.filter(candidate => candidate.preferred).sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    // Before the dealer follows, unseen trumps do not mean the dealer is
+    // certainly void. Use legal replies from the same possible deals to judge
+    // feeding or a cheap relay; retain the public-safe default for tiny samples.
+    if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
-    const best = active[0];
+    let best = active[0], selectionReason = 'ranked-outcomes';
+    if (baseline && !(fullyKnown && exactSamples === samples)) {
+      best = baseline; selectionReason = 'tactical-baseline';
+      // Compare paired terminal outcomes, not two unrelated marginal rates.
+      // This is a filter for simulation noise, not a calibrated real-game odds
+      // guarantee. Both halves must agree; a single lucky rollout is insufficient.
+      // Keep all legal options, including structural sacrifices and team relays.
+      for (const candidate of active) {
+        if (candidate === baseline) break;
+        let gains = 0, losses = 0, points = 0, squares = 0;
+        const halfWins = [0, 0], halfPoints = [0, 0], count = candidate.outcomes.length;
+        for (let i = 0; i < count; i++) {
+          const deltaWin = Number(candidate.outcomes[i] > 0) - Number(baseline.outcomes[i] > 0);
+          const deltaPoints = candidate.outcomes[i] - baseline.outcomes[i] - 1700 * deltaWin;
+          gains += Number(deltaWin > 0); losses += Number(deltaWin < 0);
+          points += deltaPoints; squares += deltaPoints * deltaPoints;
+          const half = i < Math.floor(count / 2) ? 0 : 1;
+          halfWins[half] += deltaWin; halfPoints[half] += deltaPoints;
+        }
+        const discordant = gains + losses, mean = points / count;
+        const error = count > 1 ? Math.sqrt(Math.max(0, squares - points * points / count) / (count - 1) / count) : Infinity;
+        const winEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
+        const extraDamage = candidate.brokenPairs > baseline.brokenPairs || candidate.brokenLinks > baseline.brokenLinks;
+        // A noisy points-only gain cannot justify breaking a pair/tractor when
+        // a structurally intact follow already serves the team. Proven terminal
+        // wins and exact continuations can still justify a necessary sacrifice.
+        const structuralProof = candidate.exactVisits === count && candidate.outcomes.every((value, i) => value > baseline.outcomes[i]);
+        // When it does not protect more sampled tricks, withholding score
+        // also needs winning evidence or exact proof, not a noisy points bonus.
+        const missedFeed = support && R.points(candidate.cards) < R.points(baseline.cards) && candidate.secured <= baseline.secured;
+        // Do not trade a public-proof scoring capture for noisy extra points.
+        // A consistent terminal win advantage or exact proof can still justify
+        // preserving a decisive control card instead of cashing this trick.
+        const missedCapture = baseline.certainCapture && !candidate.certainCapture
+          && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
+        const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        const pointEvidence = count >= 6 && discordant === 0 && mean > 1.96 * error && halfPoints.every(value => value > 0)
+          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : 'paired-point-advantage'; break; }
+      }
+    }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred })) : undefined };
+      selectionReason, baselineCards: baseline?.cards,
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, certainCapture: candidate.certainCapture, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -1421,7 +1971,7 @@ const Bot = (() => {
       const all = sample.hands[view.player].concat(sample.bottom);
       const buried = R.bury(all, view.trump, random, 64);
       sample.hands[view.player] = R.remove(all, buried);
-      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
+      const sim = { hands: sample.hands, bottom: buried, trump: view.trump, dealer: view.player, bid: view.bid || 120, failed: view.failed, farmerScore: 0, turn: view.player, trick: [], completed: 0 };
       for (let step = 0; step < 100 && !sim.hands.every(h => h.length === 0); step++) {
         const move = rolloutPick(sim, random);
         if (!move) break;
@@ -1860,7 +2410,7 @@ globalThis.TractorAudio = (() => {
     render(); save(); pump();
   }
   function makeView(player) {
-    return { player, hand: state.hands[player].slice(), trump: state.trump, dealer: state.dealer, bid: state.bid, bidBase: state.bidBase, reverseSuits: state.phase === 'bid' ? declareOptions(player).filter(option => option.pair).map(option => option.suit) : [], farmerScore: state.farmerScore, counts: state.hands.map(h => h.length), trick: state.trick.map(p => ({ ...p, cards: p.cards.slice() })), played: state.played.slice(), shown: state.shown.map(p => ({ player: p.player, cards: p.cards.slice() })), voids: state.voids.map(v => v.slice()), bottom: player === state.dealer ? state.bottom.slice() : null, failed: state.failed.slice(), seed: state.seed + state.played.length * 1009 + player * 181, thinkMs: state.phase === 'bid' ? 7000 : 6000, maxSamples: 512 };
+    return { player, hand: state.hands[player].slice(), trump: state.trump, dealer: state.dealer, bid: state.bid, bidBase: state.bidBase, reverseSuits: state.phase === 'bid' ? declareOptions(player).filter(option => option.pair).map(option => option.suit) : [], farmerScore: state.farmerScore, counts: state.hands.map(h => h.length), trick: state.trick.map(p => ({ ...p, cards: p.cards.slice() })), played: state.played.slice(), shown: state.shown.map(p => ({ player: p.player, cards: p.cards.slice() })), voids: state.voids.map(v => v.slice()), ...R.followConstraints(state.history, state.trick, state.trump), history: state.history.map(round => ({ plays: round.plays.map(play => ({ ...play, cards: play.cards.slice() })) })), bottom: player === state.dealer ? state.bottom.slice() : null, failed: state.failed.slice(), seed: state.seed + state.played.length * 1009 + player * 181, thinkMs: state.phase === 'bid' ? 7000 : 6000, maxSamples: 512 };
   }
   function getWorker() {
     if (!worker) {

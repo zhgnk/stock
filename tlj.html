@@ -618,6 +618,21 @@ const Bot = (() => {
       if (g === 4) {
         const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
+        if (!threats && rivals && ['pair', 'tractor'].includes(description.type)) {
+          // A winning structured trump lead removes the opponents' pair
+          // shields even when those cards have no points. Count only what
+          // every legal reply must surrender, not a convenient sampled reply.
+          // With three pairs and one tractor link, two forced pairs destroy
+          // that link; one forced pair may still leave the tractor intact.
+          for (const rival of rivals) {
+            const main = rival.filter(id => R.group(id, trump) === 4), pairs = R.pairs(main);
+            const forced = Math.min(Math.floor(Math.min(cards.length, main.length) / 2), pairs.length);
+            const levels = new Set(pairs.map(pair => R.level(pair[0], trump)));
+            const links = [...levels].filter(level => levels.has(level + 1)).length;
+            const broken = Math.max(0, links - Math.max(0, pairs.length - forced - 1));
+            score += forced * 4 + broken * 6;
+          }
+        }
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
       // A lead spends future entries too. In each hypothetical deal, examine
@@ -643,7 +658,7 @@ const Bot = (() => {
           // is a witnessed feeding risk, not an exhaustive worst-case claim.
           const points = replies.map(moves => ({ any: Math.max(...moves.map(R.points)),
             winning: Math.max(-Infinity, ...moves.filter(move => R.strength(move, cards, trump) > power).map(R.points)) }));
-          const exposedPoints = Math.max(0, points[0].winning + points[1].any, points[1].winning + points[0].any);
+          const exposedPoints = Math.max(0, points[0].winning + points[1].any + R.points(cards), points[1].winning + points[0].any + R.points(cards));
           score -= exposedPoints * 0.45;
         }
       }
@@ -982,10 +997,14 @@ const Bot = (() => {
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
-        const pointEvidence = count >= 6 && discordant === 0 && mean > 1.96 * error && halfPoints.every(value => value > 0)
+        // A leading plan with a stable points gain must not be disqualified
+        // merely because it ALSO saved a few sampled games. Require a larger
+        // paired batch and no observed lost wins; follow-play guards stay strict.
+        const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
+        const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
-        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : 'paired-point-advantage'; break; }
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
@@ -1584,6 +1603,21 @@ const Bot = (() => {
       if (g === 4) {
         const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
+        if (!threats && rivals && ['pair', 'tractor'].includes(description.type)) {
+          // A winning structured trump lead removes the opponents' pair
+          // shields even when those cards have no points. Count only what
+          // every legal reply must surrender, not a convenient sampled reply.
+          // With three pairs and one tractor link, two forced pairs destroy
+          // that link; one forced pair may still leave the tractor intact.
+          for (const rival of rivals) {
+            const main = rival.filter(id => R.group(id, trump) === 4), pairs = R.pairs(main);
+            const forced = Math.min(Math.floor(Math.min(cards.length, main.length) / 2), pairs.length);
+            const levels = new Set(pairs.map(pair => R.level(pair[0], trump)));
+            const links = [...levels].filter(level => levels.has(level + 1)).length;
+            const broken = Math.max(0, links - Math.max(0, pairs.length - forced - 1));
+            score += forced * 4 + broken * 6;
+          }
+        }
       }
       score -= R.points(cards) * (threats ? 0.4 : -0.15);
       // A lead spends future entries too. In each hypothetical deal, examine
@@ -1609,7 +1643,7 @@ const Bot = (() => {
           // is a witnessed feeding risk, not an exhaustive worst-case claim.
           const points = replies.map(moves => ({ any: Math.max(...moves.map(R.points)),
             winning: Math.max(-Infinity, ...moves.filter(move => R.strength(move, cards, trump) > power).map(R.points)) }));
-          const exposedPoints = Math.max(0, points[0].winning + points[1].any, points[1].winning + points[0].any);
+          const exposedPoints = Math.max(0, points[0].winning + points[1].any + R.points(cards), points[1].winning + points[0].any + R.points(cards));
           score -= exposedPoints * 0.45;
         }
       }
@@ -1948,10 +1982,14 @@ const Bot = (() => {
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
-        const pointEvidence = count >= 6 && discordant === 0 && mean > 1.96 * error && halfPoints.every(value => value > 0)
+        // A leading plan with a stable points gain must not be disqualified
+        // merely because it ALSO saved a few sampled games. Require a larger
+        // paired batch and no observed lost wins; follow-play guards stay strict.
+        const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
+        const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
-        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : 'paired-point-advantage'; break; }
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,

@@ -354,10 +354,29 @@ const Rules = (() => {
       if (declared && s === trump) continue;
       const threes = hand.filter(id => rank(id) === 3 && suit(id) === s);
       if (!threes.length || (declared && threes.length < 2)) continue;
-      const quality = hand.filter(id => group(id, s) === 4).length + pairs(hand.filter(id => group(id, s) === 4)).length * 2.4 + hand.filter(id => rank(id) >= 15).length * 2.5;
-      const expected = quality / Math.max(12, hand.length) * 33;
-      const threshold = declared ? 22 : dealt < 50 ? 25 : 18;
-      if (expected >= threshold && (!best || expected > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality: expected };
+      const main = hand.filter(id => group(id, s) === 4), mainPairs = pairs(main);
+      const remaining = Math.max(0, 33 - hand.length), unseen = 108 - hand.length;
+      // Project only future trump LENGTH from the remaining deck. A joker or
+      // pair already drawn must not be multiplied as if more copies will arrive.
+      // The half-standard-deviation margin is a policy cushion, not win odds.
+      const ratio = (42 - main.length) / unseen;
+      const deviation = Math.sqrt(remaining * ratio * (1 - ratio) * (unseen - remaining) / (unseen - 1));
+      const length = main.length + remaining * ratio - 0.5 * deviation;
+      if (length < 13) continue;
+      const hardControl = main.reduce((sum, id) => sum + Math.max(0, level(id, s) - 14) * 0.2, 0);
+      const pairControl = mainPairs.reduce((sum, pair) => sum + 1 + (hard(pair[0])
+        ? (level(pair[0], s) - 14) * 0.25 : (level(pair[0], s) - 4) * 0.05), 0);
+      let sideControl = 0;
+      for (let side = 0; side < 4; side++) {
+        if (side === s) continue;
+        const cards = hand.filter(id => group(id, s) === side), levels = new Set(pairs(cards).map(pair => level(pair[0], s)));
+        sideControl += cards.filter(id => rank(id) === 14).length * 0.75 + levels.size * 0.3;
+        for (const high of levels) if (levels.has(high - 1)) sideControl += 0.8;
+      }
+      // Side controls help but cannot disguise a short or weak trump holding.
+      const quality = length + hardControl + pairControl + Math.min(2.5, sideControl);
+      const threshold = (declared ? 25 : 23) + remaining / 33 * 3;
+      if (quality >= threshold && (!best || quality > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality };
     }
     return best;
   }
@@ -932,6 +951,10 @@ const Bot = (() => {
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
     const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
+    const quietCut = view.trick.length === 1 && R.describe(lead, view.trump).type === 'single'
+      && R.group(lead.cards[0], view.trump) !== 4 && !sameTeam(view.player, current.player, view.dealer)
+      && !view.hand.some(id => R.group(id, view.trump) === R.group(lead.cards[0], view.trump))
+      && !R.points(lead.cards) && view.hand.length > 6;
     const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen);
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
@@ -941,8 +964,16 @@ const Bot = (() => {
     // Every generated, distinct candidate receives the same first hidden-hand sample.
     const profiles = new WeakMap();
     const structure = handProfile(view.hand, view.trump);
+    const opposingPairPossible = [0, 1, 2].some(player => !sameTeam(view.player, player, view.dealer)
+      && !view.voids[player].includes(4) && !(view.noPairs?.[player] || []).includes(4)
+      && R.pairs(unseen).some(pair => R.group(pair[0], view.trump) === 4 && pair.every(id =>
+        !(view.forbiddenFaces?.[player] || []).includes(R.face(id))
+        && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[player] ?? 20))
+        && !view.shown.some(entry => entry.player !== player && entry.cards.includes(id)))));
     const ranked = candidates.map(cards => {
-      const rest = handProfile(R.remove(view.hand, cards), view.trump), played = handProfile(cards, view.trump);
+      const remaining = R.remove(view.hand, cards), rest = handProfile(remaining, view.trump), played = handProfile(cards, view.trump);
+      const trumpShieldLoss = opposingPairPossible && !rest.mainPairs && structure.mainPairs - played.mainPairs > 0
+        && remaining.some(R.hard);
       const power = lead ? R.strength(cards, lead, view.trump) : -1;
       const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
@@ -951,10 +982,13 @@ const Bot = (() => {
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
       const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
-      return { cards, nextLead, followUpSamples: 0, certainCapture, entryLoss, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
-    let baseline = ranked.find(candidate => candidate.preferred);
+    // Keep the final trump pair as a shield for hard trumps unless whole-game
+    // evidence justifies splitting it. Intact pair leads remain eligible.
+    const leadDefaults = ranked.filter(candidate => candidate.preferred && !candidate.trumpShieldLoss);
+    let baseline = (!lead && leadDefaults.length ? leadDefaults : ranked).find(candidate => candidate.preferred);
     const fullyKnown = Boolean(view.bottom) && new Set([...view.hand, ...view.played, ...view.bottom, ...view.shown.flatMap(entry => entry.cards)]).size === 108;
     const policySignals = [], history = view.history || [];
     if (!fullyKnown) for (let i = history.length - 1; i >= Math.max(0, history.length - 4); i--) {
@@ -1016,7 +1050,8 @@ const Bot = (() => {
       if (values.length !== active.length) break;
       const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
       const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
-        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null };
+        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null,
+        followCeiling: quietCut ? singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[(view.player + 1) % 3]) : undefined };
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
@@ -1024,8 +1059,10 @@ const Bot = (() => {
         candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
         candidate.visits++;
         if (followUps[i]) candidate.followUpSamples++;
-        if (!lead || support) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
+        if (!lead || support || quietCut) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
           leadContext);
+        if (quietCut && R.strength(candidate.cards, lead, view.trump) > R.strength(current.cards, lead, view.trump)
+          && R.strength(candidate.cards, lead, view.trump) >= leadContext.followCeiling) candidate.captureSafe++;
         if (support && Math.max(leadContext.support.power, R.strength(candidate.cards, lead, view.trump)) >= leadContext.support.ceiling) candidate.secured++;
         if (baseline) candidate.outcomes.push(values[i]);
         if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
@@ -1043,11 +1080,26 @@ const Bot = (() => {
     if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
     // Lead conservation must use possible hands, not a fictitious opponent
     // holding every unseen card. All leading candidates share these samples.
-    if (!lead && samples >= 6) baseline = ranked.filter(candidate => candidate.preferred).sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    if (!lead && samples >= 6) baseline = (leadDefaults.length ? leadDefaults : ranked.filter(candidate => candidate.preferred)).slice()
+      .sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     // Before the dealer follows, unseen trumps do not mean the dealer is
     // certainly void. Use legal replies from the same possible deals to judge
     // feeding or a cheap relay; retain the public-safe default for tiny samples.
     if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    let economicalReason = null;
+    if (quietCut && samples >= 24 && baseline.certainCapture) {
+      // The last seat must follow suit if it has any. Do not pay a joker for
+      // a zero-point entry merely because an unseen higher trump could exist.
+      // These are sampled safety gates, not calibrated real-game odds. Tiny
+      // samples and scoring tricks retain the public conservative baseline.
+      const economical = ranked.filter(candidate => candidate.visits === samples && candidate.preferred
+        && !R.points(candidate.cards) && !candidate.brokenPairs && !candidate.brokenLinks && !candidate.trumpShieldLoss
+        && candidate.captureSafe / candidate.visits >= 0.95)
+        .sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+      if (economical && economical !== baseline && R.level(economical.cards[0], view.trump) < R.level(baseline.cards[0], view.trump)) {
+        baseline = economical; economicalReason = 'sampled-economical-capture';
+      }
+    }
     let openingReason = null;
     for (const plan of openingPlans.filter(plan => plan.lowRisk)) {
       const family = [...plan.aces, ...plan.king];
@@ -1065,7 +1117,7 @@ const Bot = (() => {
     active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
     let best = active[0], selectionReason = 'ranked-outcomes';
     if (baseline && !(fullyKnown && exactSamples === samples)) {
-      best = baseline; selectionReason = openingReason || 'tactical-baseline';
+      best = baseline; selectionReason = openingReason || economicalReason || 'tactical-baseline';
       // Compare paired terminal outcomes, not two unrelated marginal rates.
       // This is a filter for simulation noise, not a calibrated real-game odds
       // guarantee. Both halves must agree; a single lucky rollout is insufficient.
@@ -1099,20 +1151,22 @@ const Bot = (() => {
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         // A leading plan with a stable points gain must not be disqualified
         // merely because it ALSO saved a few sampled games. Require a larger
         // paired batch and no observed lost wins; follow-play guards stay strict.
         const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
-          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
+          && (!lostTrumpShield || structuralProof);
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
       selectionReason, baselineCards: baseline?.cards,
       openingPlans: view.diagnostics ? openingPlans : undefined,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -1442,10 +1496,29 @@ const Rules = (() => {
       if (declared && s === trump) continue;
       const threes = hand.filter(id => rank(id) === 3 && suit(id) === s);
       if (!threes.length || (declared && threes.length < 2)) continue;
-      const quality = hand.filter(id => group(id, s) === 4).length + pairs(hand.filter(id => group(id, s) === 4)).length * 2.4 + hand.filter(id => rank(id) >= 15).length * 2.5;
-      const expected = quality / Math.max(12, hand.length) * 33;
-      const threshold = declared ? 22 : dealt < 50 ? 25 : 18;
-      if (expected >= threshold && (!best || expected > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality: expected };
+      const main = hand.filter(id => group(id, s) === 4), mainPairs = pairs(main);
+      const remaining = Math.max(0, 33 - hand.length), unseen = 108 - hand.length;
+      // Project only future trump LENGTH from the remaining deck. A joker or
+      // pair already drawn must not be multiplied as if more copies will arrive.
+      // The half-standard-deviation margin is a policy cushion, not win odds.
+      const ratio = (42 - main.length) / unseen;
+      const deviation = Math.sqrt(remaining * ratio * (1 - ratio) * (unseen - remaining) / (unseen - 1));
+      const length = main.length + remaining * ratio - 0.5 * deviation;
+      if (length < 13) continue;
+      const hardControl = main.reduce((sum, id) => sum + Math.max(0, level(id, s) - 14) * 0.2, 0);
+      const pairControl = mainPairs.reduce((sum, pair) => sum + 1 + (hard(pair[0])
+        ? (level(pair[0], s) - 14) * 0.25 : (level(pair[0], s) - 4) * 0.05), 0);
+      let sideControl = 0;
+      for (let side = 0; side < 4; side++) {
+        if (side === s) continue;
+        const cards = hand.filter(id => group(id, s) === side), levels = new Set(pairs(cards).map(pair => level(pair[0], s)));
+        sideControl += cards.filter(id => rank(id) === 14).length * 0.75 + levels.size * 0.3;
+        for (const high of levels) if (levels.has(high - 1)) sideControl += 0.8;
+      }
+      // Side controls help but cannot disguise a short or weak trump holding.
+      const quality = length + hardControl + pairControl + Math.min(2.5, sideControl);
+      const threshold = (declared ? 25 : 23) + remaining / 33 * 3;
+      if (quality >= threshold && (!best || quality > best.quality)) best = { suit: s, cards: threes.length === 2 ? threes : threes.slice(0, 1), quality };
     }
     return best;
   }
@@ -2020,6 +2093,10 @@ const Bot = (() => {
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
     const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
+    const quietCut = view.trick.length === 1 && R.describe(lead, view.trump).type === 'single'
+      && R.group(lead.cards[0], view.trump) !== 4 && !sameTeam(view.player, current.player, view.dealer)
+      && !view.hand.some(id => R.group(id, view.trump) === R.group(lead.cards[0], view.trump))
+      && !R.points(lead.cards) && view.hand.length > 6;
     const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen);
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
     if (!candidates.length) throw new Error('没有合法候选牌');
@@ -2029,8 +2106,16 @@ const Bot = (() => {
     // Every generated, distinct candidate receives the same first hidden-hand sample.
     const profiles = new WeakMap();
     const structure = handProfile(view.hand, view.trump);
+    const opposingPairPossible = [0, 1, 2].some(player => !sameTeam(view.player, player, view.dealer)
+      && !view.voids[player].includes(4) && !(view.noPairs?.[player] || []).includes(4)
+      && R.pairs(unseen).some(pair => R.group(pair[0], view.trump) === 4 && pair.every(id =>
+        !(view.forbiddenFaces?.[player] || []).includes(R.face(id))
+        && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[player] ?? 20))
+        && !view.shown.some(entry => entry.player !== player && entry.cards.includes(id)))));
     const ranked = candidates.map(cards => {
-      const rest = handProfile(R.remove(view.hand, cards), view.trump), played = handProfile(cards, view.trump);
+      const remaining = R.remove(view.hand, cards), rest = handProfile(remaining, view.trump), played = handProfile(cards, view.trump);
+      const trumpShieldLoss = opposingPairPossible && !rest.mainPairs && structure.mainPairs - played.mainPairs > 0
+        && remaining.some(R.hard);
       const power = lead ? R.strength(cards, lead, view.trump) : -1;
       const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
@@ -2039,10 +2124,13 @@ const Bot = (() => {
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
       const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
-      return { cards, nextLead, followUpSamples: 0, certainCapture, entryLoss, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
-    let baseline = ranked.find(candidate => candidate.preferred);
+    // Keep the final trump pair as a shield for hard trumps unless whole-game
+    // evidence justifies splitting it. Intact pair leads remain eligible.
+    const leadDefaults = ranked.filter(candidate => candidate.preferred && !candidate.trumpShieldLoss);
+    let baseline = (!lead && leadDefaults.length ? leadDefaults : ranked).find(candidate => candidate.preferred);
     const fullyKnown = Boolean(view.bottom) && new Set([...view.hand, ...view.played, ...view.bottom, ...view.shown.flatMap(entry => entry.cards)]).size === 108;
     const policySignals = [], history = view.history || [];
     if (!fullyKnown) for (let i = history.length - 1; i >= Math.max(0, history.length - 4); i--) {
@@ -2104,7 +2192,8 @@ const Bot = (() => {
       if (values.length !== active.length) break;
       const defaultBest = exact ? Math.max(...active.map((candidate, i) => candidate.preferred ? values[i] : -Infinity)) : 0;
       const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
-        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null };
+        support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null,
+        followCeiling: quietCut ? singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[(view.player + 1) % 3]) : undefined };
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
@@ -2112,8 +2201,10 @@ const Bot = (() => {
         candidate.points += view.player === view.dealer ? 200 - farmerScore : farmerScore;
         candidate.visits++;
         if (followUps[i]) candidate.followUpSamples++;
-        if (!lead || support) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
+        if (!lead || support || quietCut) candidate.sampledPrior += prior(view.hand, candidate.cards, view.trick, view.player, view.dealer, view.trump, unseen,
           leadContext);
+        if (quietCut && R.strength(candidate.cards, lead, view.trump) > R.strength(current.cards, lead, view.trump)
+          && R.strength(candidate.cards, lead, view.trump) >= leadContext.followCeiling) candidate.captureSafe++;
         if (support && Math.max(leadContext.support.power, R.strength(candidate.cards, lead, view.trump)) >= leadContext.support.ceiling) candidate.secured++;
         if (baseline) candidate.outcomes.push(values[i]);
         if (exact) { candidate.exactVisits++; candidate.worstAdvantage = Math.min(candidate.worstAdvantage, values[i] - defaultBest); }
@@ -2131,11 +2222,26 @@ const Bot = (() => {
     if (!samples) throw new Error('已知牌与剩余张数不一致，无法计算赢面');
     // Lead conservation must use possible hands, not a fictitious opponent
     // holding every unseen card. All leading candidates share these samples.
-    if (!lead && samples >= 6) baseline = ranked.filter(candidate => candidate.preferred).sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    if (!lead && samples >= 6) baseline = (leadDefaults.length ? leadDefaults : ranked.filter(candidate => candidate.preferred)).slice()
+      .sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     // Before the dealer follows, unseen trumps do not mean the dealer is
     // certainly void. Use legal replies from the same possible deals to judge
     // feeding or a cheap relay; retain the public-safe default for tiny samples.
     if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+    let economicalReason = null;
+    if (quietCut && samples >= 24 && baseline.certainCapture) {
+      // The last seat must follow suit if it has any. Do not pay a joker for
+      // a zero-point entry merely because an unseen higher trump could exist.
+      // These are sampled safety gates, not calibrated real-game odds. Tiny
+      // samples and scoring tricks retain the public conservative baseline.
+      const economical = ranked.filter(candidate => candidate.visits === samples && candidate.preferred
+        && !R.points(candidate.cards) && !candidate.brokenPairs && !candidate.brokenLinks && !candidate.trumpShieldLoss
+        && candidate.captureSafe / candidate.visits >= 0.95)
+        .sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
+      if (economical && economical !== baseline && R.level(economical.cards[0], view.trump) < R.level(baseline.cards[0], view.trump)) {
+        baseline = economical; economicalReason = 'sampled-economical-capture';
+      }
+    }
     let openingReason = null;
     for (const plan of openingPlans.filter(plan => plan.lowRisk)) {
       const family = [...plan.aces, ...plan.king];
@@ -2153,7 +2259,7 @@ const Bot = (() => {
     active.sort((a, b) => b.wins / b.visits - a.wins / a.visits || b.points / b.visits - a.points / a.visits || Number(b.preferred) - Number(a.preferred) || b.prior - a.prior);
     let best = active[0], selectionReason = 'ranked-outcomes';
     if (baseline && !(fullyKnown && exactSamples === samples)) {
-      best = baseline; selectionReason = openingReason || 'tactical-baseline';
+      best = baseline; selectionReason = openingReason || economicalReason || 'tactical-baseline';
       // Compare paired terminal outcomes, not two unrelated marginal rates.
       // This is a filter for simulation noise, not a calibrated real-game odds
       // guarantee. Both halves must agree; a single lucky rollout is insufficient.
@@ -2187,20 +2293,22 @@ const Bot = (() => {
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         // A leading plan with a stable points gain must not be disqualified
         // merely because it ALSO saved a few sampled games. Require a larger
         // paired batch and no observed lost wins; follow-play guards stay strict.
         const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
-          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+          && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
+          && (!lostTrumpShield || structuralProof);
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
       selectionReason, baselineCards: baseline?.cards,
       openingPlans: view.diagnostics ? openingPlans : undefined,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {

@@ -1173,13 +1173,31 @@ const Bot = (() => {
           || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))));
         const feedingWinGuard = Boolean(support?.safe && missedFeed && !savesFeedControl
           && (candidate.exactVisits !== count || baseline.exactVisits < count));
-        const winEvidence = pairedWinEvidence && !feedingWinGuard;
         // Do not trade a public-proof scoring capture for noisy extra points.
         // A consistent terminal win advantage or exact proof can still justify
         // preserving a decisive control card instead of cashing this trick.
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        // Do not discard a side master in a lost trick merely to retain a
+        // speculative low pair. If both follows give up the same (or more)
+        // points, require a concrete control tradeoff or exact continuations.
+        // A saved tractor, trump, or pair with no higher unseen same-suit pair
+        // is such a tradeoff. A top side pair may still be cut by trumps: this
+        // only admits paired winning evidence, it does not certify a win.
+        const equalConcession = lostEntry && current && !sameTeam(view.player, current.player, view.dealer)
+          && R.strength(candidate.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && R.strength(baseline.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && R.points(candidate.cards) >= R.points(baseline.cards);
+        const retainedControl = equalConcession && (candidate.brokenLinks < baseline.brokenLinks
+          || handProfile(R.remove(view.hand, candidate.cards), view.trump).links > handProfile(R.remove(view.hand, baseline.cards), view.trump).links
+          || baseline.cards.some(id => R.group(id, view.trump) === 4 && !candidate.cards.includes(id))
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))
+            && !R.pairs(unseen).some(other => R.group(other[0], view.trump) === R.group(pair[0], view.trump)
+              && R.level(other[0], view.trump) > R.level(pair[0], view.trump))));
+        const entryWinGuard = Boolean(equalConcession && !retainedControl
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard;
         const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         // A leading plan with a stable points gain must not be disqualified
         // merely because it ALSO saved a few sampled games. Require a larger
@@ -1188,7 +1206,7 @@ const Bot = (() => {
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
           && (!lostTrumpShield || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
@@ -2344,13 +2362,31 @@ const Bot = (() => {
           || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))));
         const feedingWinGuard = Boolean(support?.safe && missedFeed && !savesFeedControl
           && (candidate.exactVisits !== count || baseline.exactVisits < count));
-        const winEvidence = pairedWinEvidence && !feedingWinGuard;
         // Do not trade a public-proof scoring capture for noisy extra points.
         // A consistent terminal win advantage or exact proof can still justify
         // preserving a decisive control card instead of cashing this trick.
         const missedCapture = baseline.certainCapture && !candidate.certainCapture
           && (R.points(baseline.cards) > 0 || view.trick.some(play => R.points(play.cards) > 0));
         const lostEntry = candidate.entryLoss > baseline.entryLoss;
+        // Do not discard a side master in a lost trick merely to retain a
+        // speculative low pair. If both follows give up the same (or more)
+        // points, require a concrete control tradeoff or exact continuations.
+        // A saved tractor, trump, or pair with no higher unseen same-suit pair
+        // is such a tradeoff. A top side pair may still be cut by trumps: this
+        // only admits paired winning evidence, it does not certify a win.
+        const equalConcession = lostEntry && current && !sameTeam(view.player, current.player, view.dealer)
+          && R.strength(candidate.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && R.strength(baseline.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && R.points(candidate.cards) >= R.points(baseline.cards);
+        const retainedControl = equalConcession && (candidate.brokenLinks < baseline.brokenLinks
+          || handProfile(R.remove(view.hand, candidate.cards), view.trump).links > handProfile(R.remove(view.hand, baseline.cards), view.trump).links
+          || baseline.cards.some(id => R.group(id, view.trump) === 4 && !candidate.cards.includes(id))
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))
+            && !R.pairs(unseen).some(other => R.group(other[0], view.trump) === R.group(pair[0], view.trump)
+              && R.level(other[0], view.trump) > R.level(pair[0], view.trump))));
+        const entryWinGuard = Boolean(equalConcession && !retainedControl
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard;
         const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         // A leading plan with a stable points gain must not be disqualified
         // merely because it ALSO saved a few sampled games. Require a larger
@@ -2359,7 +2395,7 @@ const Bot = (() => {
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
           && (!lostTrumpShield || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }

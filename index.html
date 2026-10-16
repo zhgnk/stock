@@ -590,15 +590,27 @@ const Bot = (() => {
     return replies ? Math.max(-1, ...replies.map(id => R.strength([id], trick[0], trump))) : 120;
   }
   function sideEntryLoss(hand, cards, trump, unseen) {
-    if (cards.length !== 1 || !unseen) return 0;
-    const group = R.group(cards[0], trump);
-    if (group === 4) return 0;
-    const pool = unseen.filter(id => R.group(id, trump) === group);
-    if (R.level(cards[0], trump) < Math.max(0, ...pool.map(id => R.level(id, trump)))) return 0;
-    // Retaining a master may cash the points behind it after we gain the lead.
-    // This is a bounded positional value, not guaranteed future trick points.
-    const remainingPoints = R.points(hand.filter(id => id !== cards[0] && R.group(id, trump) === group));
-    return Math.min(12, remainingPoints) * 0.8;
+    if (!unseen) return 0;
+    const after = R.remove(hand, cards), intact = new Set(R.pairs(cards).flat());
+    let loss = 0;
+    for (const group of new Set(cards.map(id => R.group(id, trump)))) {
+      if (group === 4) continue;
+      const pool = unseen.filter(id => R.group(id, trump) === group);
+      const high = Math.max(0, ...pool.map(id => R.level(id, trump)));
+      const masters = cards.filter(id => R.group(id, trump) === group && R.level(id, trump) >= high && !intact.has(id));
+      const retained = after.filter(id => R.group(id, trump) === group);
+      if (!masters.length || retained.some(id => R.level(id, trump) >= Math.max(...masters.map(card => R.level(card, trump))))) continue;
+      // Count a lost suit entry once, including scattered follows to a pair.
+      // An intact played pair is valued by the structure terms instead. A
+      // remaining equal or stronger master can still provide that entry.
+      // A lower master cannot follow and beat an equal earlier rival card.
+      // Entries may cash points behind them or transfer the lead to another
+      // suit. Possible trump cuts discount this value; it is never a proof.
+      const transfer = after.some(id => R.group(id, trump) !== group) ? 2.5 : 0;
+      const cutDiscount = unseen.some(id => R.group(id, trump) === 4) ? 0.65 : 1;
+      loss += (Math.min(12, R.points(retained)) * 0.8 + transfer) * cutDiscount;
+    }
+    return loss;
   }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
@@ -704,6 +716,10 @@ const Bot = (() => {
         // for zero points is not automatically cheaper than giving up a ten.
         score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
       }
+      // Once partner is safe, equal-point feeds should retain independent
+      // entries. For example, feed K from AK before a lone master K in a
+      // different suit. The points are already safe; future access still matters.
+      if (friendly && support.safe) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
     }
     return score;
   }
@@ -977,7 +993,7 @@ const Bot = (() => {
       const power = lead ? R.strength(cards, lead, view.trump) : -1;
       const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
-      const entryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+      const entryLoss = current && (support?.safe || !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump))
         ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
@@ -1136,7 +1152,7 @@ const Bot = (() => {
         }
         const discordant = gains + losses, mean = points / count;
         const error = count > 1 ? Math.sqrt(Math.max(0, squares - points * points / count) / (count - 1) / count) : Infinity;
-        const winEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
+        const pairedWinEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
         const extraDamage = candidate.brokenPairs > baseline.brokenPairs || candidate.brokenLinks > baseline.brokenLinks;
         // A noisy points-only gain cannot justify breaking a pair/tractor when
         // a structurally intact follow already serves the team. Proven terminal
@@ -1145,6 +1161,19 @@ const Bot = (() => {
         // When it does not protect more sampled tricks, withholding score
         // also needs winning evidence or exact proof, not a noisy points bonus.
         const missedFeed = support && R.points(candidate.cards) < R.points(baseline.cards) && candidate.secured <= baseline.secured;
+        // A locked-in feed needs a concrete reason to be withheld. Approximate
+        // rollouts can overvalue keeping a redundant scoring single for later
+        // while ignoring points that are already safe. Retaining a pair/link,
+        // an independent entry or a trump is a real control tradeoff. Without
+        // one, require exact continuations for the sampled win exception.
+        // Fully known endgames still use their exact result above this selector.
+        const savesFeedControl = missedFeed && (candidate.brokenPairs < baseline.brokenPairs || candidate.brokenLinks < baseline.brokenLinks
+          || candidate.entryLoss < baseline.entryLoss
+          || baseline.cards.some(id => R.group(id, view.trump) === 4 && !candidate.cards.includes(id))
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))));
+        const feedingWinGuard = Boolean(support?.safe && missedFeed && !savesFeedControl
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard;
         // Do not trade a public-proof scoring capture for noisy extra points.
         // A consistent terminal win advantage or exact proof can still justify
         // preserving a decisive control card instead of cashing this trick.
@@ -1159,7 +1188,7 @@ const Bot = (() => {
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
           && (!lostTrumpShield || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
@@ -1732,15 +1761,27 @@ const Bot = (() => {
     return replies ? Math.max(-1, ...replies.map(id => R.strength([id], trick[0], trump))) : 120;
   }
   function sideEntryLoss(hand, cards, trump, unseen) {
-    if (cards.length !== 1 || !unseen) return 0;
-    const group = R.group(cards[0], trump);
-    if (group === 4) return 0;
-    const pool = unseen.filter(id => R.group(id, trump) === group);
-    if (R.level(cards[0], trump) < Math.max(0, ...pool.map(id => R.level(id, trump)))) return 0;
-    // Retaining a master may cash the points behind it after we gain the lead.
-    // This is a bounded positional value, not guaranteed future trick points.
-    const remainingPoints = R.points(hand.filter(id => id !== cards[0] && R.group(id, trump) === group));
-    return Math.min(12, remainingPoints) * 0.8;
+    if (!unseen) return 0;
+    const after = R.remove(hand, cards), intact = new Set(R.pairs(cards).flat());
+    let loss = 0;
+    for (const group of new Set(cards.map(id => R.group(id, trump)))) {
+      if (group === 4) continue;
+      const pool = unseen.filter(id => R.group(id, trump) === group);
+      const high = Math.max(0, ...pool.map(id => R.level(id, trump)));
+      const masters = cards.filter(id => R.group(id, trump) === group && R.level(id, trump) >= high && !intact.has(id));
+      const retained = after.filter(id => R.group(id, trump) === group);
+      if (!masters.length || retained.some(id => R.level(id, trump) >= Math.max(...masters.map(card => R.level(card, trump))))) continue;
+      // Count a lost suit entry once, including scattered follows to a pair.
+      // An intact played pair is valued by the structure terms instead. A
+      // remaining equal or stronger master can still provide that entry.
+      // A lower master cannot follow and beat an equal earlier rival card.
+      // Entries may cash points behind them or transfer the lead to another
+      // suit. Possible trump cuts discount this value; it is never a proof.
+      const transfer = after.some(id => R.group(id, trump) !== group) ? 2.5 : 0;
+      const cutDiscount = unseen.some(id => R.group(id, trump) === 4) ? 0.65 : 1;
+      loss += (Math.min(12, R.points(retained)) * 0.8 + transfer) * cutDiscount;
+    }
+    return loss;
   }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
@@ -1846,6 +1887,10 @@ const Bot = (() => {
         // for zero points is not automatically cheaper than giving up a ten.
         score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
       }
+      // Once partner is safe, equal-point feeds should retain independent
+      // entries. For example, feed K from AK before a lone master K in a
+      // different suit. The points are already safe; future access still matters.
+      if (friendly && support.safe) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
     }
     return score;
   }
@@ -2119,7 +2164,7 @@ const Bot = (() => {
       const power = lead ? R.strength(cards, lead, view.trump) : -1;
       const certainCapture = followCeiling !== null && !sameTeam(view.player, current.player, view.dealer)
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
-      const entryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+      const entryLoss = current && (support?.safe || !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump))
         ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
@@ -2278,7 +2323,7 @@ const Bot = (() => {
         }
         const discordant = gains + losses, mean = points / count;
         const error = count > 1 ? Math.sqrt(Math.max(0, squares - points * points / count) / (count - 1) / count) : Infinity;
-        const winEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
+        const pairedWinEvidence = count >= 6 && discordant >= 6 && winBounds(gains, discordant).lower > 0.5 && halfWins.every(value => value > 0);
         const extraDamage = candidate.brokenPairs > baseline.brokenPairs || candidate.brokenLinks > baseline.brokenLinks;
         // A noisy points-only gain cannot justify breaking a pair/tractor when
         // a structurally intact follow already serves the team. Proven terminal
@@ -2287,6 +2332,19 @@ const Bot = (() => {
         // When it does not protect more sampled tricks, withholding score
         // also needs winning evidence or exact proof, not a noisy points bonus.
         const missedFeed = support && R.points(candidate.cards) < R.points(baseline.cards) && candidate.secured <= baseline.secured;
+        // A locked-in feed needs a concrete reason to be withheld. Approximate
+        // rollouts can overvalue keeping a redundant scoring single for later
+        // while ignoring points that are already safe. Retaining a pair/link,
+        // an independent entry or a trump is a real control tradeoff. Without
+        // one, require exact continuations for the sampled win exception.
+        // Fully known endgames still use their exact result above this selector.
+        const savesFeedControl = missedFeed && (candidate.brokenPairs < baseline.brokenPairs || candidate.brokenLinks < baseline.brokenLinks
+          || candidate.entryLoss < baseline.entryLoss
+          || baseline.cards.some(id => R.group(id, view.trump) === 4 && !candidate.cards.includes(id))
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id))));
+        const feedingWinGuard = Boolean(support?.safe && missedFeed && !savesFeedControl
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard;
         // Do not trade a public-proof scoring capture for noisy extra points.
         // A consistent terminal win advantage or exact proof can still justify
         // preserving a decisive control card instead of cashing this trick.
@@ -2301,7 +2359,7 @@ const Bot = (() => {
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
           && (!lostTrumpShield || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, winEvidence, pointEvidence, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }

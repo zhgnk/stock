@@ -610,6 +610,24 @@ const Bot = (() => {
     }
     return loss;
   }
+  function trumpEntryLoss(hand, cards, trump, unseen) {
+    if (!unseen || !cards.some(id => R.group(id, trump) === 4)) return 0;
+    // Pairs/tractors already have structural value. Here value the last
+    // scattered trump that can stop later scoring singles, not every hard card.
+    const paired = new Set(R.pairs(hand).flat());
+    const high = Math.max(0, ...hand.filter(id => R.group(id, trump) === 4 && !paired.has(id)).map(id => R.level(id, trump)));
+    const after = R.remove(hand, cards), retained = Math.max(0, ...after.filter(id => R.group(id, trump) === 4).map(id => R.level(id, trump)));
+    if (retained >= high) return 0;
+    const opponents = unseen.filter(id => R.group(id, trump) === 4);
+    // Equal later cards cannot overtake. A single outstanding blocker discounts
+    // promotion value; several blockers make this too speculative for a prior.
+    const blockers = opponents.filter(id => R.level(id, trump) >= high).length;
+    if (blockers > 1) return 0;
+    const exposed = opponents.filter(id => R.value(id) && R.level(id, trump) < high && R.level(id, trump) >= retained);
+    if (!exposed.length) return 0;
+    const transfer = after.some(id => R.group(id, trump) !== 4) ? 2.5 : 0;
+    return (Math.min(15, R.points(exposed)) * 0.9 + transfer) / (1 + blockers);
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
@@ -726,6 +744,7 @@ const Bot = (() => {
         // provide an entry and cash the scoring cards behind it. Discarding it
         // for zero points is not automatically cheaper than giving up a ten.
         score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+        score -= trumpEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
       }
       // Once partner is safe, equal-point feeds should retain independent
       // entries. For example, feed K from AK before a lone master K in a
@@ -1085,10 +1104,12 @@ const Bot = (() => {
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
       const entryLoss = current && (support?.safe || !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump))
         ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
+      const mainEntryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+        ? trumpEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
       const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
-      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, mainEntryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
     // Keep the final trump pair as a shield for hard trumps unless whole-game
@@ -1302,7 +1323,26 @@ const Bot = (() => {
               && R.level(other[0], view.trump) > R.level(pair[0], view.trump))));
         const entryWinGuard = Boolean(equalConcession && !retainedControl
           && (candidate.exactVisits !== count || baseline.exactVisits < count));
-        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard;
+        // A publicly highest remaining trump also blocks lower trump throws.
+        // Do not erase that last stopper just to retain a scoring single on an
+        // approximate rollout's win claim. Saving another structure/entry or
+        // avoiding a mathematically decisive concession is a concrete tradeoff;
+        // completed exact continuations can also override this policy guard.
+        const baselineRest = R.remove(view.hand, baseline.cards);
+        const lostTrumpStopper = candidate.mainEntryLoss > baseline.mainEntryLoss
+          && R.strength(baseline.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && Math.max(0, ...baselineRest.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)))
+            > Math.max(0, ...unseen.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)));
+        const savesOtherControl = candidate.entryLoss < baseline.entryLoss || candidate.brokenLinks < baseline.brokenLinks
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id)));
+        // Only a completed lost trick makes these points unavailable. In the
+        // middle seat a later teammate may still recover the whole trick.
+        const decisiveConcession = view.trick.length === 2 && (view.player === view.dealer
+          ? view.farmerScore + view.trick.reduce((sum, play) => sum + R.points(play.cards), 0) + R.points(baseline.cards) >= R.farmerTarget(view.bid)
+          : view.farmerScore + R.points(baselineRest) + R.points(unseen) + R.points(view.bottom || []) < R.farmerTarget(view.bid));
+        const mainEntryWinGuard = Boolean(lostTrumpStopper && !savesOtherControl && !decisiveConcession
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard && !mainEntryWinGuard;
         const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         const captureEconomyGuard = baseline.certainCapture && candidate.certainCapture
           && R.strength(candidate.cards, lead, view.trump) > R.strength(baseline.cards, lead, view.trump)
@@ -1316,8 +1356,8 @@ const Bot = (() => {
         const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
-          && (!lostTrumpShield || structuralProof) && (!captureEconomyGuard || structuralProof) && (!coverageGuard || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
+          && (!lostTrumpShield || structuralProof) && (!captureEconomyGuard || structuralProof) && (!coverageGuard || structuralProof) && !mainEntryWinGuard;
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, mainEntryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
@@ -1325,7 +1365,7 @@ const Bot = (() => {
       selectionReason, baselineCards: baseline?.cards,
       partnerCoverage: view.diagnostics ? partnerCoverage : undefined,
       openingPlans: view.diagnostics ? openingPlans : undefined,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, mainEntryLoss: candidate.mainEntryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {
@@ -1911,6 +1951,24 @@ const Bot = (() => {
     }
     return loss;
   }
+  function trumpEntryLoss(hand, cards, trump, unseen) {
+    if (!unseen || !cards.some(id => R.group(id, trump) === 4)) return 0;
+    // Pairs/tractors already have structural value. Here value the last
+    // scattered trump that can stop later scoring singles, not every hard card.
+    const paired = new Set(R.pairs(hand).flat());
+    const high = Math.max(0, ...hand.filter(id => R.group(id, trump) === 4 && !paired.has(id)).map(id => R.level(id, trump)));
+    const after = R.remove(hand, cards), retained = Math.max(0, ...after.filter(id => R.group(id, trump) === 4).map(id => R.level(id, trump)));
+    if (retained >= high) return 0;
+    const opponents = unseen.filter(id => R.group(id, trump) === 4);
+    // Equal later cards cannot overtake. A single outstanding blocker discounts
+    // promotion value; several blockers make this too speculative for a prior.
+    const blockers = opponents.filter(id => R.level(id, trump) >= high).length;
+    if (blockers > 1) return 0;
+    const exposed = opponents.filter(id => R.value(id) && R.level(id, trump) < high && R.level(id, trump) >= retained);
+    if (!exposed.length) return 0;
+    const transfer = after.some(id => R.group(id, trump) !== 4) ? 2.5 : 0;
+    return (Math.min(15, R.points(exposed)) * 0.9 + transfer) / (1 + blockers);
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
@@ -2027,6 +2085,7 @@ const Bot = (() => {
         // provide an entry and cash the scoring cards behind it. Discarding it
         // for zero points is not automatically cheaper than giving up a ten.
         score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+        score -= trumpEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
       }
       // Once partner is safe, equal-point feeds should retain independent
       // entries. For example, feed K from AK before a lone master K in a
@@ -2386,10 +2445,12 @@ const Bot = (() => {
         && power > R.strength(current.cards, lead, view.trump) && power >= followCeiling;
       const entryLoss = current && (support?.safe || !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump))
         ? sideEntryLoss(view.hand, cards, view.trump, unseen) : 0;
+      const mainEntryLoss = current && !sameTeam(view.player, current.player, view.dealer) && power <= R.strength(current.cards, lead, view.trump)
+        ? trumpEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
       const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
-      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
+      return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, mainEntryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
     // Keep the final trump pair as a shield for hard trumps unless whole-game
@@ -2603,7 +2664,26 @@ const Bot = (() => {
               && R.level(other[0], view.trump) > R.level(pair[0], view.trump))));
         const entryWinGuard = Boolean(equalConcession && !retainedControl
           && (candidate.exactVisits !== count || baseline.exactVisits < count));
-        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard;
+        // A publicly highest remaining trump also blocks lower trump throws.
+        // Do not erase that last stopper just to retain a scoring single on an
+        // approximate rollout's win claim. Saving another structure/entry or
+        // avoiding a mathematically decisive concession is a concrete tradeoff;
+        // completed exact continuations can also override this policy guard.
+        const baselineRest = R.remove(view.hand, baseline.cards);
+        const lostTrumpStopper = candidate.mainEntryLoss > baseline.mainEntryLoss
+          && R.strength(baseline.cards, lead, view.trump) <= R.strength(current.cards, lead, view.trump)
+          && Math.max(0, ...baselineRest.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)))
+            > Math.max(0, ...unseen.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)));
+        const savesOtherControl = candidate.entryLoss < baseline.entryLoss || candidate.brokenLinks < baseline.brokenLinks
+          || R.pairs(view.hand).some(pair => pair.some(id => baseline.cards.includes(id)) && pair.every(id => !candidate.cards.includes(id)));
+        // Only a completed lost trick makes these points unavailable. In the
+        // middle seat a later teammate may still recover the whole trick.
+        const decisiveConcession = view.trick.length === 2 && (view.player === view.dealer
+          ? view.farmerScore + view.trick.reduce((sum, play) => sum + R.points(play.cards), 0) + R.points(baseline.cards) >= R.farmerTarget(view.bid)
+          : view.farmerScore + R.points(baselineRest) + R.points(unseen) + R.points(view.bottom || []) < R.farmerTarget(view.bid));
+        const mainEntryWinGuard = Boolean(lostTrumpStopper && !savesOtherControl && !decisiveConcession
+          && (candidate.exactVisits !== count || baseline.exactVisits < count));
+        const winEvidence = pairedWinEvidence && !feedingWinGuard && !entryWinGuard && !mainEntryWinGuard;
         const lostTrumpShield = candidate.trumpShieldLoss && !baseline.trumpShieldLoss;
         const captureEconomyGuard = baseline.certainCapture && candidate.certainCapture
           && R.strength(candidate.cards, lead, view.trump) > R.strength(baseline.cards, lead, view.trump)
@@ -2617,8 +2697,8 @@ const Bot = (() => {
         const leadValueEvidence = !lead && count >= 16 && gains > 0 && losses === 0;
         const pointEvidence = count >= 6 && (discordant === 0 || leadValueEvidence) && mean > 1.96 * error && halfPoints.every(value => value > 0)
           && (!lead || !extraDamage || structuralProof) && (!missedFeed || structuralProof) && (!missedCapture || structuralProof) && (!lostEntry || structuralProof)
-          && (!lostTrumpShield || structuralProof) && (!captureEconomyGuard || structuralProof) && (!coverageGuard || structuralProof);
-        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
+          && (!lostTrumpShield || structuralProof) && (!captureEconomyGuard || structuralProof) && (!coverageGuard || structuralProof) && !mainEntryWinGuard;
+        candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, mainEntryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
     }
@@ -2626,7 +2706,7 @@ const Bot = (() => {
       selectionReason, baselineCards: baseline?.cards,
       partnerCoverage: view.diagnostics ? partnerCoverage : undefined,
       openingPlans: view.diagnostics ? openingPlans : undefined,
-      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
+      evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, mainEntryLoss: candidate.mainEntryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
   function contract(view) {

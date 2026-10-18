@@ -628,6 +628,23 @@ const Bot = (() => {
     const transfer = after.some(id => R.group(id, trump) !== 4) ? 2.5 : 0;
     return (Math.min(15, R.points(exposed)) * 0.9 + transfer) / (1 + blockers);
   }
+  function forcedTrumpCost(hand, lead, trump) {
+    const d = R.describe(lead, trump);
+    if (!['pair', 'tractor'].includes(d.type)) return 0;
+    const main = hand.filter(id => R.group(id, trump) === 4);
+    const same = hand.filter(id => R.group(id, trump) === d.group).length;
+    const need = Math.min(main.length, d.group === 4 ? d.n : Math.max(0, d.n - same));
+    if (!need) return 0;
+    const cost = cards => cards.filter(R.hard).reduce((sum, id) => sum + R.level(id, trump) - 14, 0);
+    const pairs = R.pairs(main).sort((a, b) => cost(a) - cost(b));
+    const chosen = pairs.slice(0, Math.min(Math.floor(need / 2), pairs.length)).flat();
+    // If pairs suffice there is at most one forced single. Substituting a
+    // more expensive pair cannot save more single-card cost than it adds.
+    // If pairs do not suffice every pair is compulsory. Thus the cheapest
+    // pairs plus the highest remaining hard singles give the exact minimum.
+    const singles = R.remove(main, chosen).filter(R.hard).sort(R.byPower(trump)).slice(0, need - chosen.length);
+    return cost(chosen) + cost(singles);
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
@@ -665,15 +682,17 @@ const Bot = (() => {
       if (g === 4) {
         const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
-        if (!threats && rivals && ['pair', 'tractor'].includes(description.type)) {
-          // A winning structured trump lead removes the opponents' pair
-          // shields even when those cards have no points. Count only what
-          // every legal reply must surrender, not a convenient sampled reply.
-          // With three pairs and one tractor link, two forced pairs destroy
-          // that link; one forced pair may still leave the tractor intact.
+      }
+      if (rivals && ['pair', 'tractor'].includes(description.type)) {
+        // A side pair can dismantle an opposing tractor before it forces our
+        // own controls out. Trump structures also strip pair shields and then
+        // mandatory high hard singles. Use the same rule-aware estimate in
+        // root comparisons and hypothetical continuations, not a fixed plan.
+        score += rivals.reduce((sum, rival) => sum + forcedTrumpCost(rival, cards, trump), 0) * 1.2;
+        if (!threats) {
           for (const rival of rivals) {
-            const main = rival.filter(id => R.group(id, trump) === 4), pairs = R.pairs(main);
-            const forced = Math.min(Math.floor(Math.min(cards.length, main.length) / 2), pairs.length);
+            const same = rival.filter(id => R.group(id, trump) === g), pairs = R.pairs(same);
+            const forced = Math.min(Math.floor(Math.min(cards.length, same.length) / 2), pairs.length);
             const levels = new Set(pairs.map(pair => R.level(pair[0], trump)));
             const links = [...levels].filter(level => levels.has(level + 1)).length;
             const broken = Math.max(0, links - Math.max(0, pairs.length - forced - 1));
@@ -693,6 +712,7 @@ const Bot = (() => {
         // longer leads use only a proven lower bound from required group counts;
         // a small response sample cannot establish that a hard card is forced.
         const forcedHard = replies.map((moves, i) => {
+          if (['pair', 'tractor'].includes(description.type)) return 0; // Already valued exactly above.
           if (cards.length <= 2) return Math.min(...moves.map(spentHard));
           const rival = rivals[i], main = rival.filter(id => R.group(id, trump) === 4);
           const same = rival.filter(id => R.group(id, trump) === g).length;
@@ -1072,6 +1092,29 @@ const Bot = (() => {
     // suit-retention plan. For example, C(11,4)=330 exceeds the old 256 cap.
     const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
+    const controlPlans = [];
+    if (!lead && view.player === view.dealer && !openingPlans.length && view.hand.length > 12
+      && Array.isArray(view.history) && view.history.length <= 2
+      && view.history.every(round => round.plays[0].player === view.dealer && round.plays[R.winningIndex(round.plays, view.trump)].player === view.dealer)) {
+      const links = handProfile(view.hand, view.trump).links;
+      const intact = candidates.filter(cards => ['pair', 'tractor'].includes(R.describe(cards, view.trump).type)
+        && handProfile(R.remove(view.hand, cards), view.trump).links + handProfile(cards, view.trump).links === links);
+      const mains = intact.filter(cards => R.group(cards[0], view.trump) === 4
+        && R.strength(cards, cards, view.trump) >= replyCeiling(cards, view.trump, unseen))
+        .sort((a, b) => b.length - a.length || R.level(a[0], view.trump) - R.level(b[0], view.trump));
+      const sides = intact.filter(cards => R.group(cards[0], view.trump) !== 4 && cards.length === 2
+        && !view.voids.some((groups, p) => p !== view.dealer && groups.includes(R.group(cards[0], view.trump)))
+        && !R.pairs(unseen).some(pair => R.group(pair[0], view.trump) === R.group(cards[0], view.trump)
+          && R.level(pair[0], view.trump) > R.level(cards[0], view.trump)))
+        .sort((a, b) => R.level(b[0], view.trump) - R.level(a[0], view.trump));
+      // Compare both orders on the same hidden deals. Side pairs can still be
+      // cut; the actual replies decide whether the second lead is reached.
+      // These are simulation plans only. The next live turn is recalculated.
+      if (mains.length && sides.length) {
+        for (const first of sides) controlPlans.push({ first, second: mains[0] });
+        for (const first of mains) controlPlans.push({ first, second: sides[0] });
+      }
+    }
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
     const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
@@ -1108,7 +1151,7 @@ const Bot = (() => {
         ? trumpEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
-      const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
+      const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : controlPlans.find(plan => plan.first === cards)?.second || null;
       return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, mainEntryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
@@ -1166,7 +1209,7 @@ const Bot = (() => {
         while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
           let move = null;
           if (pending && sim.completed >= 1) {
-            // Compare K -> AA and AA -> K as two-round plans on the same deal.
+            // Compare both orders of the two-round plan on the same deal.
             // A lost opening trick cancels the follow-up immediately.
             if (sim.completed === 1 && sim.turn === view.player && !sim.trick.length
               && !R.validate(sim.hands[sim.turn], pending, null, sim.trump)) { move = pending; followed = true; }
@@ -1365,6 +1408,7 @@ const Bot = (() => {
       selectionReason, baselineCards: baseline?.cards,
       partnerCoverage: view.diagnostics ? partnerCoverage : undefined,
       openingPlans: view.diagnostics ? openingPlans : undefined,
+      controlPlans: view.diagnostics ? controlPlans : undefined,
       evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, mainEntryLoss: candidate.mainEntryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();
@@ -1969,6 +2013,23 @@ const Bot = (() => {
     const transfer = after.some(id => R.group(id, trump) !== 4) ? 2.5 : 0;
     return (Math.min(15, R.points(exposed)) * 0.9 + transfer) / (1 + blockers);
   }
+  function forcedTrumpCost(hand, lead, trump) {
+    const d = R.describe(lead, trump);
+    if (!['pair', 'tractor'].includes(d.type)) return 0;
+    const main = hand.filter(id => R.group(id, trump) === 4);
+    const same = hand.filter(id => R.group(id, trump) === d.group).length;
+    const need = Math.min(main.length, d.group === 4 ? d.n : Math.max(0, d.n - same));
+    if (!need) return 0;
+    const cost = cards => cards.filter(R.hard).reduce((sum, id) => sum + R.level(id, trump) - 14, 0);
+    const pairs = R.pairs(main).sort((a, b) => cost(a) - cost(b));
+    const chosen = pairs.slice(0, Math.min(Math.floor(need / 2), pairs.length)).flat();
+    // If pairs suffice there is at most one forced single. Substituting a
+    // more expensive pair cannot save more single-card cost than it adds.
+    // If pairs do not suffice every pair is compulsory. Thus the cheapest
+    // pairs plus the highest remaining hard singles give the exact minimum.
+    const singles = R.remove(main, chosen).filter(R.hard).sort(R.byPower(trump)).slice(0, need - chosen.length);
+    return cost(chosen) + cost(singles);
+  }
   function prior(hand, cards, trick, player, dealer, trump, unseen, context = {}) {
     const { rivals = null, support = farmerSupport(trick, player, dealer, trump, unseen, rivals?.[0]) } = context;
     const lead = trick[0] || null;
@@ -2006,15 +2067,17 @@ const Bot = (() => {
       if (g === 4) {
         const mainCount = hand.filter(id => R.group(id, trump) === 4).length;
         score += player === dealer && mainCount >= hand.length * 0.48 ? 6 : -2;
-        if (!threats && rivals && ['pair', 'tractor'].includes(description.type)) {
-          // A winning structured trump lead removes the opponents' pair
-          // shields even when those cards have no points. Count only what
-          // every legal reply must surrender, not a convenient sampled reply.
-          // With three pairs and one tractor link, two forced pairs destroy
-          // that link; one forced pair may still leave the tractor intact.
+      }
+      if (rivals && ['pair', 'tractor'].includes(description.type)) {
+        // A side pair can dismantle an opposing tractor before it forces our
+        // own controls out. Trump structures also strip pair shields and then
+        // mandatory high hard singles. Use the same rule-aware estimate in
+        // root comparisons and hypothetical continuations, not a fixed plan.
+        score += rivals.reduce((sum, rival) => sum + forcedTrumpCost(rival, cards, trump), 0) * 1.2;
+        if (!threats) {
           for (const rival of rivals) {
-            const main = rival.filter(id => R.group(id, trump) === 4), pairs = R.pairs(main);
-            const forced = Math.min(Math.floor(Math.min(cards.length, main.length) / 2), pairs.length);
+            const same = rival.filter(id => R.group(id, trump) === g), pairs = R.pairs(same);
+            const forced = Math.min(Math.floor(Math.min(cards.length, same.length) / 2), pairs.length);
             const levels = new Set(pairs.map(pair => R.level(pair[0], trump)));
             const links = [...levels].filter(level => levels.has(level + 1)).length;
             const broken = Math.max(0, links - Math.max(0, pairs.length - forced - 1));
@@ -2034,6 +2097,7 @@ const Bot = (() => {
         // longer leads use only a proven lower bound from required group counts;
         // a small response sample cannot establish that a hard card is forced.
         const forcedHard = replies.map((moves, i) => {
+          if (['pair', 'tractor'].includes(description.type)) return 0; // Already valued exactly above.
           if (cards.length <= 2) return Math.min(...moves.map(spentHard));
           const rival = rivals[i], main = rival.filter(id => R.group(id, trump) === 4);
           const same = rival.filter(id => R.group(id, trump) === g).length;
@@ -2413,6 +2477,29 @@ const Bot = (() => {
     // suit-retention plan. For example, C(11,4)=330 exceeds the old 256 cap.
     const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
+    const controlPlans = [];
+    if (!lead && view.player === view.dealer && !openingPlans.length && view.hand.length > 12
+      && Array.isArray(view.history) && view.history.length <= 2
+      && view.history.every(round => round.plays[0].player === view.dealer && round.plays[R.winningIndex(round.plays, view.trump)].player === view.dealer)) {
+      const links = handProfile(view.hand, view.trump).links;
+      const intact = candidates.filter(cards => ['pair', 'tractor'].includes(R.describe(cards, view.trump).type)
+        && handProfile(R.remove(view.hand, cards), view.trump).links + handProfile(cards, view.trump).links === links);
+      const mains = intact.filter(cards => R.group(cards[0], view.trump) === 4
+        && R.strength(cards, cards, view.trump) >= replyCeiling(cards, view.trump, unseen))
+        .sort((a, b) => b.length - a.length || R.level(a[0], view.trump) - R.level(b[0], view.trump));
+      const sides = intact.filter(cards => R.group(cards[0], view.trump) !== 4 && cards.length === 2
+        && !view.voids.some((groups, p) => p !== view.dealer && groups.includes(R.group(cards[0], view.trump)))
+        && !R.pairs(unseen).some(pair => R.group(pair[0], view.trump) === R.group(cards[0], view.trump)
+          && R.level(pair[0], view.trump) > R.level(cards[0], view.trump)))
+        .sort((a, b) => R.level(b[0], view.trump) - R.level(a[0], view.trump));
+      // Compare both orders on the same hidden deals. Side pairs can still be
+      // cut; the actual replies decide whether the second lead is reached.
+      // These are simulation plans only. The next live turn is recalculated.
+      if (mains.length && sides.length) {
+        for (const first of sides) controlPlans.push({ first, second: mains[0] });
+        for (const first of mains) controlPlans.push({ first, second: sides[0] });
+      }
+    }
     const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
     const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
@@ -2449,7 +2536,7 @@ const Bot = (() => {
         ? trumpEntryLoss(view.hand, cards, view.trump, unseen) : 0;
       const plan = openingPlans.find(plan => plan.first && (cards.length === 1 && cards[0] === plan.king[0]
         || cards.length === 2 && cards.every(id => plan.aces.includes(id))));
-      const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : null;
+      const nextLead = plan ? (cards.length === 1 ? plan.aces : plan.king) : controlPlans.find(plan => plan.first === cards)?.second || null;
       return { cards, nextLead, followUpSamples: 0, certainCapture, trumpShieldLoss, entryLoss, mainEntryLoss, captureSafe: 0, brokenPairs: structure.pairs - rest.pairs - played.pairs, brokenLinks: Math.max(0, structure.links - rest.links - played.links),
         preferred: defaultKeys.has(cards.map(R.face).sort((a, b) => a - b).join(',')), prior: prior(view.hand, cards, view.trick, view.player, view.dealer, view.trump, unseen, { support, profiles, followCeiling }), sampledPrior: 0, secured: 0, wins: 0, points: 0, visits: 0, exactVisits: 0, worstAdvantage: Infinity, outcomes: [] };
     }).sort((a, b) => b.prior - a.prior);
@@ -2507,7 +2594,7 @@ const Bot = (() => {
         while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
           let move = null;
           if (pending && sim.completed >= 1) {
-            // Compare K -> AA and AA -> K as two-round plans on the same deal.
+            // Compare both orders of the two-round plan on the same deal.
             // A lost opening trick cancels the follow-up immediately.
             if (sim.completed === 1 && sim.turn === view.player && !sim.trick.length
               && !R.validate(sim.hands[sim.turn], pending, null, sim.trump)) { move = pending; followed = true; }
@@ -2706,6 +2793,7 @@ const Bot = (() => {
       selectionReason, baselineCards: baseline?.cards,
       partnerCoverage: view.diagnostics ? partnerCoverage : undefined,
       openingPlans: view.diagnostics ? openingPlans : undefined,
+      controlPlans: view.diagnostics ? controlPlans : undefined,
       evaluations: view.diagnostics ? ranked.map(candidate => ({ cards: candidate.cards, nextLead: candidate.nextLead, followUpSamples: candidate.followUpSamples, certainCapture: candidate.certainCapture, trumpShieldLoss: candidate.trumpShieldLoss, captureSafe: quietCut ? candidate.captureSafe : undefined, captureScore: quietCut ? candidate.sampledPrior / candidate.visits : undefined, entryLoss: candidate.entryLoss, mainEntryLoss: candidate.mainEntryLoss, wins: candidate.wins, samples: candidate.visits, winRate: candidate.wins / candidate.visits, expectedPoints: candidate.points / candidate.visits, preferred: candidate.preferred, leadScore: !lead ? candidate.sampledPrior / candidate.visits : undefined, supportScore: support ? candidate.sampledPrior / candidate.visits : undefined, secured: support ? candidate.secured : undefined, brokenPairs: candidate.brokenPairs, brokenLinks: candidate.brokenLinks, evidence: candidate.evidence })) : undefined };
   }
   const contractCache = new Map();

@@ -522,7 +522,7 @@ const Bot = (() => {
     const pairs = R.pairs(hand), paired = new Set(pairs.flat());
     const levels = Array.from({ length: 5 }, () => new Set());
     for (const pair of pairs) levels[R.group(pair[0], trump)].add(R.level(pair[0], trump));
-    let links = 0, initiative = 0;
+    let links = 0, initiative = 0, cashablePoints = 0;
     for (const group of levels) for (const level of group) if (group.has(level + 1)) links++;
     if (unseen) {
       const rivalPairs = rivals ? rivals.flatMap(R.pairs) : R.pairs(unseen);
@@ -530,8 +530,8 @@ const Bot = (() => {
       for (let g = 0; g <= 4; g++) {
         const own = hand.filter(id => R.group(id, trump) === g);
         if (!own.length) continue;
-        const rivals = unseen.filter(id => R.group(id, trump) === g);
-        const high = Math.max(0, ...rivals.map(id => R.level(id, trump)));
+        const otherCards = unseen.filter(id => R.group(id, trump) === g);
+        const high = Math.max(0, ...otherCards.map(id => R.level(id, trump)));
         const factor = g === 4 || !mainThreat ? 1 : 0.65;
         const topSingles = own.filter(id => !paired.has(id) && R.level(id, trump) >= high).length;
         initiative += topSingles * 2.5 * factor;
@@ -542,12 +542,19 @@ const Bot = (() => {
           const power = 1 / (1 + threats);
           powers.set(level, power);
           initiative += 4 * power * factor;
+          // Value one immediately cashable scoring pair separately from generic
+          // control. A partial side follow cannot cut; a void opponent with a
+          // trump pair can. This uses hypothetical opponents, never live hands.
+          if (rivals && !threats && rivals.every(hand => g === 4 || hand.some(id => R.group(id, trump) === g)
+            || !R.pairs(hand).some(other => R.group(other[0], trump) === 4))) {
+            cashablePoints = Math.max(cashablePoints, R.points(pair));
+          }
         }
         for (const [level, power] of powers) if (powers.has(level + 1)) initiative += 5 * Math.min(power, powers.get(level + 1)) * factor;
         if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
       }
     }
-    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative) };
+    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative), cashablePoints };
     if (cache) cache.set(hand, result);
     return result;
   }
@@ -769,7 +776,14 @@ const Bot = (() => {
       // Once partner is safe, equal-point feeds should retain independent
       // entries. For example, feed K from AK before a lone master K in a
       // different suit. The points are already safe; future access still matters.
-      if (friendly && support.safe) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      if (friendly && support.safe && !wins) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      // Using an entry to take the lead is not discarding it. Compare the
+      // remaining controls of both farmers when the same hypothetical deal
+      // shows that we can protect the trick and put our own structures to use.
+      if (friendly && wins && teamHolds && Number.isFinite(context.partnerControl)) {
+        score += (afterProfile.initiative - context.partnerControl) * 1.2;
+        score += (afterProfile.cashablePoints - (context.partnerCash || 0)) * 0.9;
+      }
     }
     return score;
   }
@@ -892,7 +906,9 @@ const Bot = (() => {
     const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
     const followCeiling = singleFollowCeiling(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[(sim.turn + 1) % 3]);
     const profiles = new WeakMap();
-    const context = { rivals, support, profiles, followCeiling, farmerScore: sim.farmerScore, bid: sim.bid };
+    const partnerProfile = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals) : null;
+    const context = { rivals, support, profiles, followCeiling, partnerControl: partnerProfile?.initiative, partnerCash: partnerProfile?.cashablePoints,
+      farmerScore: sim.farmerScore, bid: sim.bid };
     const small = sim.hands.every(cards => cards.length <= 3);
     const available = small ? smallMoves(hand, lead, sim.trump, unseen) : R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
     if (small) {
@@ -909,7 +925,7 @@ const Bot = (() => {
           advance(next, sim.turn, move);
           const value = endgame(next, view, search);
           const preferred = defaults.has(move.map(R.face).sort((a, b) => a - b).join(','));
-          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
+          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, context);
           if (value > bestValue || value === bestValue && (Number(preferred) > Number(bestDefault) || preferred === bestDefault && score > bestPrior)) {
             best = move; bestValue = value; bestDefault = preferred; bestPrior = score;
           }
@@ -927,15 +943,10 @@ const Bot = (() => {
     const scoringCapture = winner && !sameTeam(sim.turn, winner.player, sim.dealer)
       && defaults.every(cards => winning.includes(cards)) && (sim.trick.some(play => R.points(play.cards)) || defaults.some(cards => R.points(cards)));
     const moves = scoringCapture ? defaults : available;
-    const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     const scored = [];
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
-      if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
-        const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
-        score += (ownControl - partnerControl) * 1.2;
-      }
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, context);
       scored.push({ cards: move, prior: score });
       score += (random() - .5) * 1.5;
       if (score > bestScore) { bestScore = score; best = move; }
@@ -1232,6 +1243,10 @@ const Bot = (() => {
       const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
         support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null,
         followCeiling: quietCut ? singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[(view.player + 1) % 3]) : undefined };
+      if (support) {
+        const partnerProfile = handProfile(sample.hands[support.winner], view.trump, leadContext.rivals.flat(), leadContext.rivals);
+        leadContext.partnerControl = partnerProfile.initiative; leadContext.partnerCash = partnerProfile.cashablePoints;
+      }
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);
@@ -1907,7 +1922,7 @@ const Bot = (() => {
     const pairs = R.pairs(hand), paired = new Set(pairs.flat());
     const levels = Array.from({ length: 5 }, () => new Set());
     for (const pair of pairs) levels[R.group(pair[0], trump)].add(R.level(pair[0], trump));
-    let links = 0, initiative = 0;
+    let links = 0, initiative = 0, cashablePoints = 0;
     for (const group of levels) for (const level of group) if (group.has(level + 1)) links++;
     if (unseen) {
       const rivalPairs = rivals ? rivals.flatMap(R.pairs) : R.pairs(unseen);
@@ -1915,8 +1930,8 @@ const Bot = (() => {
       for (let g = 0; g <= 4; g++) {
         const own = hand.filter(id => R.group(id, trump) === g);
         if (!own.length) continue;
-        const rivals = unseen.filter(id => R.group(id, trump) === g);
-        const high = Math.max(0, ...rivals.map(id => R.level(id, trump)));
+        const otherCards = unseen.filter(id => R.group(id, trump) === g);
+        const high = Math.max(0, ...otherCards.map(id => R.level(id, trump)));
         const factor = g === 4 || !mainThreat ? 1 : 0.65;
         const topSingles = own.filter(id => !paired.has(id) && R.level(id, trump) >= high).length;
         initiative += topSingles * 2.5 * factor;
@@ -1927,12 +1942,19 @@ const Bot = (() => {
           const power = 1 / (1 + threats);
           powers.set(level, power);
           initiative += 4 * power * factor;
+          // Value one immediately cashable scoring pair separately from generic
+          // control. A partial side follow cannot cut; a void opponent with a
+          // trump pair can. This uses hypothetical opponents, never live hands.
+          if (rivals && !threats && rivals.every(hand => g === 4 || hand.some(id => R.group(id, trump) === g)
+            || !R.pairs(hand).some(other => R.group(other[0], trump) === 4))) {
+            cashablePoints = Math.max(cashablePoints, R.points(pair));
+          }
         }
         for (const [level, power] of powers) if (powers.has(level + 1)) initiative += 5 * Math.min(power, powers.get(level + 1)) * factor;
         if (topSingles) initiative += Math.min(4, Math.max(0, own.length - 3)) * 0.6 * factor;
       }
     }
-    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative) };
+    const result = { pairs: pairs.length, mainPairs: pairs.filter(pair => R.group(pair[0], trump) === 4).length, links, initiative: Math.min(30, initiative), cashablePoints };
     if (cache) cache.set(hand, result);
     return result;
   }
@@ -2154,7 +2176,14 @@ const Bot = (() => {
       // Once partner is safe, equal-point feeds should retain independent
       // entries. For example, feed K from AK before a lone master K in a
       // different suit. The points are already safe; future access still matters.
-      if (friendly && support.safe) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      if (friendly && support.safe && !wins) score -= sideEntryLoss(hand, cards, trump, rivals ? rivals.flat() : unseen);
+      // Using an entry to take the lead is not discarding it. Compare the
+      // remaining controls of both farmers when the same hypothetical deal
+      // shows that we can protect the trick and put our own structures to use.
+      if (friendly && wins && teamHolds && Number.isFinite(context.partnerControl)) {
+        score += (afterProfile.initiative - context.partnerControl) * 1.2;
+        score += (afterProfile.cashablePoints - (context.partnerCash || 0)) * 0.9;
+      }
     }
     return score;
   }
@@ -2277,7 +2306,9 @@ const Bot = (() => {
     const support = farmerSupport(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[sim.dealer]);
     const followCeiling = singleFollowCeiling(sim.trick, sim.turn, sim.dealer, sim.trump, unseen, sim.hands[(sim.turn + 1) % 3]);
     const profiles = new WeakMap();
-    const context = { rivals, support, profiles, followCeiling, farmerScore: sim.farmerScore, bid: sim.bid };
+    const partnerProfile = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals) : null;
+    const context = { rivals, support, profiles, followCeiling, partnerControl: partnerProfile?.initiative, partnerCash: partnerProfile?.cashablePoints,
+      farmerScore: sim.farmerScore, bid: sim.bid };
     const small = sim.hands.every(cards => cards.length <= 3);
     const available = small ? smallMoves(hand, lead, sim.trump, unseen) : R.legalMoves(hand, lead, sim.trump, { random, samples: 8, unseen });
     if (small) {
@@ -2294,7 +2325,7 @@ const Bot = (() => {
           advance(next, sim.turn, move);
           const value = endgame(next, view, search);
           const preferred = defaults.has(move.map(R.face).sort((a, b) => a - b).join(','));
-          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
+          const score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, context);
           if (value > bestValue || value === bestValue && (Number(preferred) > Number(bestDefault) || preferred === bestDefault && score > bestPrior)) {
             best = move; bestValue = value; bestDefault = preferred; bestPrior = score;
           }
@@ -2312,15 +2343,10 @@ const Bot = (() => {
     const scoringCapture = winner && !sameTeam(sim.turn, winner.player, sim.dealer)
       && defaults.every(cards => winning.includes(cards)) && (sim.trick.some(play => R.points(play.cards)) || defaults.some(cards => R.points(cards)));
     const moves = scoringCapture ? defaults : available;
-    const partnerControl = support ? handProfile(sim.hands[support.winner], sim.trump, rivals.flat(), rivals).initiative : 0;
     let best = moves[0], bestScore = -Infinity;
     const scored = [];
     for (const move of moves) {
-      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, { rivals, support, profiles, followCeiling });
-      if (support && R.strength(move, lead, sim.trump) > support.power && R.strength(move, lead, sim.trump) >= support.ceiling) {
-        const ownControl = handProfile(R.remove(hand, move), sim.trump, rivals.flat(), rivals).initiative;
-        score += (ownControl - partnerControl) * 1.2;
-      }
+      let score = prior(hand, move, sim.trick, sim.turn, sim.dealer, sim.trump, unseen, context);
       scored.push({ cards: move, prior: score });
       score += (random() - .5) * 1.5;
       if (score > bestScore) { bestScore = score; best = move; }
@@ -2617,6 +2643,10 @@ const Bot = (() => {
       const leadContext = { rivals: sample.hands.filter((hand, player) => !sameTeam(view.player, player, view.dealer)), leadForecast: true, profiles: new WeakMap(),
         support: support ? farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[view.dealer]) : null,
         followCeiling: quietCut ? singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, sample.hands[(view.player + 1) % 3]) : undefined };
+      if (support) {
+        const partnerProfile = handProfile(sample.hands[support.winner], view.trump, leadContext.rivals.flat(), leadContext.rivals);
+        leadContext.partnerControl = partnerProfile.initiative; leadContext.partnerCash = partnerProfile.cashablePoints;
+      }
       active.forEach((candidate, i) => {
         const won = values[i] > 0;
         const farmerScore = (values[i] - (won ? 850 : -850)) * (view.player === view.dealer ? -1 : 1);

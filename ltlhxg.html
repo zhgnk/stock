@@ -4,6 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>龙头量化选股平台 · 独立看盘版</title>
+<script>
+/* 首屏前恢复主题，避免亮色模式刷新时闪过暗底。 */
+function applyTheme(theme){
+  var light=theme==='light';
+  document.documentElement.dataset.theme=light?'light':'dark';
+  var btn=document.getElementById('themeToggle');
+  if(btn){
+    btn.textContent=light?'☾':'☀';
+    btn.setAttribute('aria-pressed',String(light));
+    btn.title=light?'当前为亮色，点击切换暗色':'当前为暗色，点击切换亮色';
+  }
+}
+function toggleTheme(){
+  var theme=document.documentElement.dataset.theme==='light'?'dark':'light';
+  applyTheme(theme);
+  try{ localStorage.setItem('ltlhxg_theme',theme); }catch(e){}
+}
+(function(){
+  var theme='dark';
+  try{ theme=localStorage.getItem('ltlhxg_theme')||theme; }catch(e){}
+  applyTheme(theme);
+  document.addEventListener('DOMContentLoaded',function(){ applyTheme(document.documentElement.dataset.theme); });
+})();
+</script>
 <style>
   /* 独立版不再引用外部字体文件：fonts/weibei-cn.ttf 从来没随文件一起发过，
      单文件分发时它只会变成 Console 里两条 ERR_FILE_NOT_FOUND。
@@ -1446,6 +1470,90 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px s
 /* ⑤「依据」四段用 · 分隔后可换行，避免被挤成一行截断 */
 #pos-list td.pos-why{white-space:nowrap}   /* 断行由渲染层插入的 <br> 控制，避免再被自动折成三四行 */
 </style>
+<style id="theme-style">
+  .theme-toggle{display:inline-grid;place-items:center;width:24px;height:24px;padding:0;
+    border:0;border-radius:50%;background:transparent;color:var(--fg);-webkit-text-fill-color:var(--fg);
+    font:18px/1 "Segoe UI Symbol",sans-serif;letter-spacing:0;flex-shrink:0}
+  .theme-toggle:hover{background:var(--card2);color:var(--blue);-webkit-text-fill-color:var(--blue)}
+  html[data-theme="light"]{
+    color-scheme:light;
+    --bg:#f3f6fb;--bg2:#f5f8fd;--card:#fff;--card2:#edf2fa;--card3:#e4ecf8;
+    --line:#d5dfed;--line2:#b5c6dc;--fg:#202f46;--mut:#52647c;--dim:#64748b;
+    --red:#c92b3c;--grn:#167444;--ylw:#986000;--blue:#255fc2;--pur:#7042b5;
+    --bylw:#886100;--pool:#255fc2;--seed:#8133b8;--strong:#b000a8;--start:#886100;
+  }
+  html[data-theme="light"] body{background:linear-gradient(180deg,#edf3fd,#f7f9fc 460px,var(--bg))}
+  html[data-theme="light"] header{background:linear-gradient(180deg,#fff,#f0f5fc)}
+  html[data-theme="light"] .bt h1{background:none;color:var(--fg)}
+  html[data-theme="light"] .bt h1 .ver{color:var(--fg);-webkit-text-fill-color:var(--fg)}
+  html[data-theme="light"] .logo{--bylw:#ffd34d}
+  html[data-theme="light"] .tabs button.active{color:#fff}
+  html[data-theme="light"] .tabs button:hover:not(.active),
+  html[data-theme="light"] .tbmode button:hover{color:var(--bylw);background:var(--card2)}
+  html[data-theme="light"] .btn{color:var(--fg)}
+  html[data-theme="light"] .btn.primary{color:#fff}
+  html[data-theme="light"] .btn.warn{color:var(--ylw)}
+  html[data-theme="light"] .btn.stop{color:var(--red)}
+  html[data-theme="light"] input[type=number],
+  html[data-theme="light"] input[type=text]{background:var(--card)}
+  html[data-theme="light"] :is(.kpi,.zonebar,.panel,.colx){background:var(--card)}
+  html[data-theme="light"] .kpi{box-shadow:0 3px 14px rgba(39,66,107,.07)}
+  html[data-theme="light"] .kpi.xincang{--acc:var(--grn)}
+  html[data-theme="light"] :is(.colx,.pooltbl){border-color:#c6a34e}
+  html[data-theme="light"] .colx h2{background:var(--card2)}
+  html[data-theme="light"] .colx.base h2{color:var(--pool)}
+  html[data-theme="light"] th,
+  html[data-theme="light"] thead th:first-child{background:var(--card2);color:var(--mut)}
+  html[data-theme="light"] .colx table th,
+  html[data-theme="light"] .pooltbl table th{background:#f4e9c9;color:#654b13}
+  html[data-theme="light"] :is(#t-fly,#t-base,#t-xincang,#pq-list,#pz-list,#pos-list) table thead th{
+    background:#f4e9c9!important;color:#654b13!important}
+  html[data-theme="light"] tbody tr:nth-child(even){background:#f4f7fc}
+  html[data-theme="light"] tbody tr:hover{background:#e9f0fc}
+  html[data-theme="light"] :is(.km,.ztrack){background:#e2e9f4}
+  html[data-theme="light"] :is(.md,.zcol.zhi .zlab){color:var(--fg)}
+  html[data-theme="light"] :is(.lo,.nul,.bhl.none,.secx.na){color:var(--dim)}
+  html[data-theme="light"] a.code:hover{color:var(--blue)}
+  html[data-theme="light"] :is(.hi,.t-one,.st-brk,.sec-note b,.sigb.s-h2 b,.sigb.s-r2 b,td.num.warm){color:var(--ylw)}
+  html[data-theme="light"] :is(.up,.lv.up,.lead-def .dir,.alert-bar,.t-limit,.t-lhbhot,.yz.yzb,.nw.A,.st-dull,.v-bad,.sigb.s-h1 b,.sigb.s-r1 b,.bhl.l4,.bhl.zb){color:var(--red)}
+  html[data-theme="light"] :is(.dn,.lv.dn,.t-gua,.t-lhbpick,.yz.yzs,.st-up,.st-test,.v-ok,.xctab .op,.auto-btn.on,.auto-chip.ok .st,.colx.xincang h2){color:var(--grn)}
+  html[data-theme="light"] :is(.t-nh,.nw.a,.v-info,.sigb.s-h3 b,.sigb.s-r3 b,.bhl.l1,.secx.sub,.cn){color:var(--blue)}
+  html[data-theme="light"] :is(.t-2,.bhl.l5){color:var(--pur)}
+  html[data-theme="light"] :is(.bhl.l3,td.num.hot2,.tag.t-fb){color:#a54c12}
+  html[data-theme="light"] :is(.st-base,.cn b){color:var(--mut)}
+  html[data-theme="light"] .code-chip{background:#fbe5e5;color:var(--red)}
+  html[data-theme="light"] #msg{background:var(--card);color:var(--fg)}
+  html[data-theme="light"] #sa-bar{background:#fff0f0;color:var(--fg)}
+  html[data-theme="light"] #sa-bar b{color:var(--fg)}
+  html[data-theme="light"] :is(#sc-bar,#sa-bar.warn){background:#fff5dc;color:#755511}
+  html[data-theme="light"] #sc-bar button{color:#755511}
+  html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#b6c5da;background-clip:content-box}
+  html[data-theme="light"] ::-webkit-scrollbar-thumb:hover{background:#94a9c4;background-clip:content-box}
+  /* 评级页有独立的局部变量，需在作用域根同步切换。 */
+  html[data-theme="light"] #rating{
+    --bg:#f3f6fb;--bg2:#f5f8fd;--card:#fff;--card2:#edf2fa;--line:#d5dfed;
+    --tx:#202f46;--tx2:#52647c;--tx3:#64748b;
+    --red:#c92b3c;--grn:#167444;--blu:#255fc2;--wht:#202f46;--amb:#986000;--pur:#7042b5;
+    --v-up:#c92b3c;--v-dn:#167444;--v-fl:#52647c;--v-name:#202f46;
+    --v-code:#255fc2;--v-score:#a54c12;--v-conf:#886100;--v-heat:#52647c;
+  }
+  html[data-theme="light"] #rating :is(.datepill select,.ctrl select,.ctrl input[type=text]){background:var(--card);border-color:var(--line)}
+  html[data-theme="light"] #rating :is(.datepill,.auto label,.top .lvfbar,.ctrl,.mb,.msg,.ref b,.nm .t,.src b){color:var(--tx)}
+  html[data-theme="light"] #rating :is(.mb:hover,.mb.on,.src:hover,.mbtn:hover){color:var(--pur)}
+  html[data-theme="light"] #rating .btn{color:#fff}
+  html[data-theme="light"] #rating .grp>.bd{background:var(--bg2)}
+  html[data-theme="light"] #rating :is(.row,.fac,.ref,.note,.mb){border-color:var(--line)}
+  html[data-theme="light"] #rating .score .tk{background:#e2e9f4;border-color:var(--line)}
+  html[data-theme="light"] #rating :is(.badge.lv-s,.chip.neg,.dg .tg.lead,.lt-burst){color:var(--red)}
+  html[data-theme="light"] #rating .badge.lv-a{color:#a54c12}
+  html[data-theme="light"] #rating :is(.badge.lv-b,.blk .bt,.frz){color:var(--amb)}
+  html[data-theme="light"] #rating :is(.badge.lv-c,.chip.quote,.lt-layer){color:var(--tx2)}
+  html[data-theme="light"] #rating :is(.badge.lv-n,.chip.mile,.frz.done,.frz .dyn,.lt-zhu){color:var(--grn)}
+  html[data-theme="light"] #rating :is(.bar-note.info,.chip.num,.lt-da){color:var(--blu)}
+  html[data-theme="light"] #rating :is(.chip.fund,.chip.fund b.fl,.mbtn,.lt-zhui){color:var(--pur)}
+  html[data-theme="light"] #rating .frz .fg{background:#e2e9f4}
+  html[data-theme="light"] #ltDailyWarn{color:var(--red)!important}
+</style>
 </head>
 <body>
 <!-- 自检告警带：只在自检不通过时出现。★ 必须放在 body 最前面且用 position:sticky（而不是 fixed）——
@@ -1512,13 +1620,8 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px s
 })();
 </script>
 <header>
-  <!-- ★ 2026-10-30 最终排法（用户确认）：页头只剩一行。
-       左：品牌区（龍 + 主标题 + 副标题）——DOM 一个字没动，所以副标题按 .bt 中轴居中、
-           版本号 .ver 绝对定位在标题右侧之外，这些几何关系全部照旧，位置零变化。
-       右：.hright 纵向栈 —— 「龙头股」释义卡在上，交易日/刷新/页签两组胶囊在下，整体右对齐。
-           胶囊组因此上移一行（原来在页头底部独占一行），页头矮约 40px。
-       释义卡字号自适应脚本按「父元素右缘 − .datebox 左缘」算宽：.hright 右缘 = 行右缘，
-       .datebox 又是胶囊组最左项 ⇒ 卡左缘仍与交易日胶囊左缘严丝合缝。 -->
+  <!-- 主题图标位于右侧交易日前。
+       副标题仍以标题文字为中轴，释义卡仍与交易日控件左缘对齐。 -->
   <div class="hrow top">
     <div class="brand">
       <div class="logo">龍</div>
@@ -1535,7 +1638,8 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px s
       <div class="ctrls">
         <span id="act-panqian" class="actgrp hidden"></span>
         <span id="act-panzhong" class="actgrp hidden"></span>
-        <label class="datebox"><span>交易日</span><select id="date"></select></label>
+        <button type="button" class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="亮色主题" aria-pressed="false" title="当前为暗色，点击切换亮色">☀</button>
+        <label class="datebox" title="独立看盘版仅提供当日数据，暂不支持选择历史日期"><span>交易日</span><select id="date" aria-label="交易日（仅当日数据）"></select></label>
         <!-- 2026-10-30 用户要求：刷新实时涨幅胶囊从行首移到「交易日」胶囊与页签胶囊组之间 -->
         <span id="act-panhou" class="actgrp">
           <button class="btn ghost" onclick="loadLive(true)">↻ 刷新实时涨幅</button>
@@ -2087,7 +2191,6 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px s
 <footer style="margin:16px 16px 6px;padding:10px 12px;border-top:1px solid var(--line);color:var(--dim);font-size:11px;line-height:1.7">
   <b style="color:var(--mut)">风险提示 · 免责声明：</b>本工具的全部档位、评分、开盘与盘中信号均为规则化 / 统计化的研究输出，仅供复盘与研究参考，<b style="color:var(--ylw)">不构成任何投资建议</b>。历史标定（收益、t 值、胜率、样本内外一致性）不预示未来表现。市场有风险，交易需自担，请结合自身风险承受能力独立决策，必要时咨询持牌专业机构。
 </footer>
-<div style="text-align:center;padding:8px 16px 20px;font-size:14px;line-height:1.8"><a href="http://www.70822.com/" target="_blank" style="color:var(--bylw);text-decoration:underline;font-weight:600">分析家公式网</a></div>
 
 <!-- 自检常驻行（#selfcheck 去掉后的替代）：正常态一行 10.5px 小字，点开看明细；异常转琥珀 + 顶部告警带。
      参数被改 / 字段名分叉这类问题不报错、页面照常出数，若页面上一点痕迹都不留，就只能等人主动去查。 -->
@@ -3277,7 +3380,31 @@ function saRetry(){
   msg("正在重新拉取全市场行情与信号池…");
   loadStandalone();
 }
-function copy(c,quiet){ try{ if(copyText(c)){ if(!quiet) msg("已复制 "+c); return; } }catch(e){} msg("复制失败"); }
+/* 股票池与评级页共用，不能放在评级页的私有作用域里。 */
+async function copyText(t){
+  t=String(t===null||t===undefined?'':t); if(!t) return false;
+  var ta;
+  try{
+    ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.top='-1000px';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length);
+    if(document.execCommand('copy')) return true;
+  }catch(e){}finally{
+    if(ta) ta.remove();
+  }
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+async function copy(c,quiet){
+  if(await copyText(c)){
+    if(!quiet) msg("已复制 "+c);
+  }else msg("复制失败，请选中代码后按 Ctrl+C");
+}
 
 /* ============ ① 三个股票池的切换胶囊（2026-10-24，单选）============
    三个胶囊是**单选**：同一时刻只有一个池显示，它独占整行宽度（= 和 ②③ 一样宽）。
@@ -3331,12 +3458,15 @@ function applyPoolView(){
   if(st) st.style.gridColumn = 'auto';       // 干掉旧「两上一下」的 1/-1 跨列
 }
 
-/* 独立版点代码不再尝试跳转：浏览器唤不起通达信的键盘精灵（tdx:// 未注册，
-   通达信也不接受命令行参数）。改成「复制代码 + 告诉你怎么最快输进去」——
-   通达信里敲 6 再输代码回车，是手工路径里最快的。 */
+/* 所有股票代码直接打开网页 K 线；旁边的「复」仍只复制代码。 */
 function openTdx(c){
-  copy(c, true);
-  msg("已复制 "+c+"：在通达信里敲 6 再输代码回车即可");
+  openStockKline(c);
+}
+function openStockKline(code){
+  if(!code) return;
+  code=String(code).replace(/[^0-9]/g,'').slice(0,6);
+  if(!code) return;
+  window.open('https://quote.eastmoney.com/'+pf(code)+code+'.html','_blank');
 }
 /* 交易所前缀：腾讯行情按 sh/sz/bj 三个前缀取数。
    920 / 43 / 83 / 87 / 88 / 4 开头走 bj；900 开头是沪 B，仍走 sh，所以 9 开头要先判 920。 */
@@ -8155,14 +8285,13 @@ function downloadText(fn, text){
   setTimeout(function(){ try{ URL.revokeObjectURL(url); a.remove(); }catch(e){} },1500);
 }
 /* 下载并同时复制「全部代码」到剪贴板 —— 手敲几十个代码不现实，粘贴才是常态 */
-function exportBlocks(blocks, scope, reason){
+async function exportBlocks(blocks, scope, reason){
   const r=buildBlkText(blocks, scope);
   if(!r.all.length){ msg("当前没有可选股票（池为空），未导出"); return; }
   downloadText("龙头板块_"+(r.date||"NA")+".txt", r.text);
   let extra="";
-  /* file:// 双击独立使用时，多数浏览器会禁用 navigator.clipboard，
-     故统一走 copyText（自带 execCommand 兜底），保证独立/通达信两种场景都能复制 */
-  if(copyText(r.all.join(" "))) extra="，全部代码已复制";
+  /* 共用两种剪贴板接口，确认复制成功后再提示。 */
+  if(await copyText(r.all.join(" "))) extra="，全部代码已复制";
   msg("已导出「"+(scope||"")+"」"+r.blocks.length+" 个板块 / "+r.all.length+" 只代码"
       +(reason?("（"+reason+"）"):"")+extra);
 }
@@ -10575,7 +10704,7 @@ function renderRow(r,open){
   var refs=(d.refs||[]).map(function(rr){
     var p=pctOf(PM_CN[rr.c]);
     return '<span class="ref" data-c="'+esc(rr.c)+'" data-n="'+esc(rr.n)+'" title="'
-      +esc(rr.n)+' '+esc(tdx6(rr.c))+' · 点击复制代码">'
+      +esc(rr.n)+' '+esc(tdx6(rr.c))+' · 点击打开网页K线">'
       +'<b>'+esc(rr.n)+'</b><span class="cd">'+esc(tdx6(rr.c))+'</span>'
       +'<span class="pc '+clsOf(p)+'">'+fmtPct(p)+'</span></span>';
   }).join('');
@@ -10613,7 +10742,7 @@ function renderRow(r,open){
           +' · 主力 '+(drMainNetIn(F)!=null?(drMainNetIn(F)>0?'+':'')+fmtFlowYuan(drMainNetIn(F)):'--')
           +(F.frozen?'\n🔒 名称/代码/竞价涨幅/综合评分/可信度 已按竞价定格锁定'
                     :'\n⚡ 连板/龙头卡位/封板/炸板 随交易更新')
-          +' · 点击复制代码">'
+          +' · 点击打开网页K线">'
           +'<b>'+esc(F.name)+'</b>'
           +'<span class="cd">'+esc(F.code)+'</span>'
           +'<span class="pc '+clsOf(F.bidNum)+'">'+F.bid+'</span>'
@@ -10996,24 +11125,9 @@ function tdxSend(url,ms){
   if(TDX.mode==='copy') return 0;
   var n=0; if(tdxCall(url,ms)) n++; if(TDX.top&&tdxTop(url)) n+=2; return n;
 }
-function copyText(t){
-  t=String(t===null||t===undefined?'':t); if(!t) return false;
-  try{ var ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly','');
-    ta.style.position='fixed'; ta.style.top='-1000px';
-    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length);
-    var ok=document.execCommand('copy'); ta.remove(); if(ok) return true; }catch(e){}
-  try{ if(navigator.clipboard&&navigator.clipboard.writeText){
-    var p=navigator.clipboard.writeText(t); if(p&&p['catch']) p['catch'](function(){}); return true; } }catch(e){}
-  return false;
-}
 function tdxLink(code,name){
   var c6=tdx6(code); if(!c6) return;
-  
-  var sent=TDX.mode==='tree'?tdxSend('http://www.treeid/code_'+c6,1000):false;
-  var ok=TDX.copy?copyText(c6):false;
-  var tip = sent ? '已送达通达信 <b>'+c6+'</b>'+(TDX.top?'（双通道）':'（静默）')
-         : ok ? c6+' 已复制 · 切到通达信 <b>Ctrl+V</b>' : '请手动输入 <b>'+c6+'</b>';
-  toast((name?'<b>'+esc(name)+'</b> ':'')+tip, sent||ok?'ok':'warn');
+  window.openStockKline(c6);
 }
 function tdxCodes(scope,key){
   var out=[], seen={};
@@ -11043,10 +11157,11 @@ function tdxExport(key){
   if(dlFile(nm,blkText(cs))) toast('已导出 <b>'+esc(nm)+'</b>（'+cs.length+' 只）','ok');
   else toast('导出失败，请检查下载权限','warn');
 }
-function tdxSendBlock(cs){
+async function tdxSendBlock(cs){
   if(!cs||!cs.length){ toast('没有可发送的个股','warn'); return; }
   if(TDX.mode==='copy'){
-    if(copyText(cs.map(tdx6).join('\r\n'))) toast('已复制 <b>'+cs.length+'</b> 只代码','ok');
+    if(await copyText(cs.map(tdx6).join('\r\n'))) toast('已复制 <b>'+cs.length+'</b> 只代码','ok');
+    else toast('复制失败，请手动复制代码','warn');
     return;
   }
   var q=cs.map(function(c){ return tdxMkt(c)+'#'+tdx6(c); }).join('|');
@@ -11161,12 +11276,16 @@ function bindTdx(){
   });
   tdxSt();
   var area=$('areaPm');
-  if(area) area.addEventListener('click',function(ev){
+  if(area) area.addEventListener('click',async function(ev){
     var t=ev.target;
     var b=t.closest?t.closest('[data-act]'):null;
     if(b){
       var act=b.getAttribute('data-act'), key=b.getAttribute('data-key')||'', cs=tdxCodes('',key);
-      if(act==='rowcopy'){ if(cs.length&&copyText(cs.map(tdx6).join('\r\n'))) toast('已复制 <b>'+cs.length+'</b> 只代码','ok'); }
+      if(act==='rowcopy'){
+        if(!cs.length) toast('没有可复制的个股','warn');
+        else if(await copyText(cs.map(tdx6).join('\r\n'))) toast('已复制 <b>'+cs.length+'</b> 只代码','ok');
+        else toast('复制失败，请手动复制代码','warn');
+      }
       else if(act==='rowsend'){ tdxSendBlock(cs); once(b,2000); }
       else if(act==='rowblk'){ tdxExport(key); }
       else if(act==='dgsend'){

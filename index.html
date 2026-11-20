@@ -437,6 +437,12 @@ const Bot = (() => {
     const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
     return R.deck().filter(id => !known.has(id));
   }
+  function mayHold(view, player, id, trump) {
+    return !(view.voids?.[player] || []).includes(R.group(id, trump))
+      && (!R.hard(id) || R.level(id, trump) <= (view.hardCeilings?.[player] ?? 20))
+      && !(view.forbiddenFaces?.[player] || []).includes(R.face(id))
+      && !(view.shown || []).some(entry => entry.player !== player && entry.cards.includes(id));
+  }
   function sampleHands(view, random, policySignals = []) {
     const hands = [[], [], []];
     hands[view.player] = view.hand.slice();
@@ -558,7 +564,7 @@ const Bot = (() => {
     if (cache) cache.set(hand, result);
     return result;
   }
-  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
+  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null, view = null) {
     if (!trick.length || player === dealer) return null;
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     if (winner.player === dealer) return null;
@@ -566,33 +572,51 @@ const Bot = (() => {
     let ceiling = -1;
     if (!trick.some(entry => entry.player === dealer)) {
       // Only a hypothetical sampled hand is supplied here, never the live deal.
-      ceiling = replyCeiling(lead, trump, unseen, dealerHand);
+      ceiling = replyCeiling(lead, trump, unseen, dealerHand, view, dealer);
     }
     return { winner: winner.player, power, ceiling, safe: power >= ceiling };
   }
-  function replyCeiling(lead, trump, unseen, followHand = null) {
-    // Enumerate winning structures, never infer safety from sampled replies.
-    // Partial suit follows cannot win, even when completed with higher trumps.
-    const description = R.describe(lead, trump), cards = followHand || unseen;
+  function replyCeiling(lead, trump, unseen, followHand = null, view = null, player = -1) {
+    // Enumerate possible winning structures. Public deductions may exclude
+    // cards, but unknown holdings must never be treated as a complete hand.
+    const description = R.describe(lead, trump);
+    let cards = followHand || unseen;
     if (!cards) return 120;
-    const same = followHand?.filter(id => R.group(id, trump) === description.group);
-    if (same?.length && same.length < description.n) return -1;
+    let required = [], slots = Infinity, noPairs = [];
+    if (view && !followHand) {
+      const shown = view.shown || [];
+      slots = view.counts?.[player] ?? Infinity;
+      noPairs = view.noPairs?.[player] || [];
+      required = [...new Set(shown.filter(entry => entry.player === player && (player !== view.dealer || view.bottom))
+        .flatMap(entry => entry.cards).filter(id => cards.includes(id)))];
+      cards = cards.filter(id => mayHold(view, player, id, trump));
+    }
+    const same = cards.filter(id => R.group(id, trump) === description.group);
+    // Known cards and remaining capacity can prove that a suit must be followed.
+    // A dealer's declared card may have been buried, so it is not required above.
+    const mustFollow = followHand ? same.length > 0 : Boolean(view) && (required.some(id => R.group(id, trump) === description.group)
+      || Number.isFinite(slots) && cards.length - same.length < slots);
+    if (mustFollow && same.length < description.n) return -1;
+    const fits = move => new Set([...required, ...move]).size <= slots;
     let ceiling = -1;
-    for (const group of new Set(same?.length ? [description.group] : [description.group, 4])) {
+    for (const group of new Set(mustFollow ? [description.group] : [description.group, 4])) {
       const pool = cards.filter(id => R.group(id, trump) === group);
-      if (pool.length < description.n) continue;
-      if (description.type === 'single' || description.type === 'throw') ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...pool.map(id => R.level(id, trump))));
-      else {
+      if (pool.length < description.n || description.n + required.filter(id => R.group(id, trump) !== group).length > slots) continue;
+      if (description.type === 'single' || description.type === 'throw') {
+        const possible = pool.filter(id => fits([id]));
+        if (possible.length) ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...possible.map(id => R.level(id, trump))));
+      } else if (!noPairs.includes(group)) {
         const replies = description.type === 'pair' ? R.pairs(pool) : R.leadMoves(pool, trump, [], false).filter(cards => cards.length === description.n);
-        ceiling = Math.max(ceiling, ...replies.filter(move => !followHand || !R.validate(followHand, move, lead, trump)).map(move => R.strength(move, lead, trump)));
+        ceiling = Math.max(ceiling, ...replies.filter(move => fits(move) && (!followHand || !R.validate(followHand, move, lead, trump)))
+          .map(move => R.strength(move, lead, trump)));
       }
     }
     return ceiling;
   }
-  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null) {
+  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null, view = null) {
     if (!trick.length) return null;
     if (trick.length === 2 || sameTeam(player, (player + 1) % 3, dealer)) return -1;
-    return replyCeiling(trick[0], trump, unseen, followHand);
+    return replyCeiling(trick[0], trump, unseen, followHand, view, (player + 1) % 3);
   }
   function sideEntryLoss(hand, cards, trump, unseen) {
     if (!unseen) return 0;
@@ -1101,7 +1125,12 @@ const Bot = (() => {
     // set so this does not multiply the cost of every future simulated turn.
     // Enumerate manageable late follows instead of randomly omitting a whole
     // suit-retention plan. For example, C(11,4)=330 exceeds the old 256 cap.
-    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen, partialThrows: true });
+    // A buried card cannot fail a throw. Exclude it only when neither other
+    // seat can hold it. Actual trump responses are evaluated in the search.
+    const otherSeats = [0, 1, 2].filter(player => player !== view.player);
+    const throwBlockers = !lead && !view.bottom
+      ? unseen.filter(id => otherSeats.some(player => mayHold(view, player, id, view.trump))) : unseen;
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, throwBlockers) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen: throwBlockers, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
     const controlPlans = [];
     if (!lead && view.player === view.dealer && !openingPlans.length && view.hand.length > 12
@@ -1126,8 +1155,8 @@ const Bot = (() => {
         for (const first of mains) controlPlans.push({ first, second: sides[0] });
       }
     }
-    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
-    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
+    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, null, view);
+    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, null, view);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
     const quietCut = view.trick.length === 1 && R.describe(lead, view.trump).type === 'single'
       && R.group(lead.cards[0], view.trump) !== 4 && !sameTeam(view.player, current.player, view.dealer)
@@ -1837,6 +1866,12 @@ const Bot = (() => {
     const known = new Set([...view.hand, ...view.played, ...(view.bottom || [])]);
     return R.deck().filter(id => !known.has(id));
   }
+  function mayHold(view, player, id, trump) {
+    return !(view.voids?.[player] || []).includes(R.group(id, trump))
+      && (!R.hard(id) || R.level(id, trump) <= (view.hardCeilings?.[player] ?? 20))
+      && !(view.forbiddenFaces?.[player] || []).includes(R.face(id))
+      && !(view.shown || []).some(entry => entry.player !== player && entry.cards.includes(id));
+  }
   function sampleHands(view, random, policySignals = []) {
     const hands = [[], [], []];
     hands[view.player] = view.hand.slice();
@@ -1958,7 +1993,7 @@ const Bot = (() => {
     if (cache) cache.set(hand, result);
     return result;
   }
-  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null) {
+  function farmerSupport(trick, player, dealer, trump, unseen = null, dealerHand = null, view = null) {
     if (!trick.length || player === dealer) return null;
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     if (winner.player === dealer) return null;
@@ -1966,33 +2001,51 @@ const Bot = (() => {
     let ceiling = -1;
     if (!trick.some(entry => entry.player === dealer)) {
       // Only a hypothetical sampled hand is supplied here, never the live deal.
-      ceiling = replyCeiling(lead, trump, unseen, dealerHand);
+      ceiling = replyCeiling(lead, trump, unseen, dealerHand, view, dealer);
     }
     return { winner: winner.player, power, ceiling, safe: power >= ceiling };
   }
-  function replyCeiling(lead, trump, unseen, followHand = null) {
-    // Enumerate winning structures, never infer safety from sampled replies.
-    // Partial suit follows cannot win, even when completed with higher trumps.
-    const description = R.describe(lead, trump), cards = followHand || unseen;
+  function replyCeiling(lead, trump, unseen, followHand = null, view = null, player = -1) {
+    // Enumerate possible winning structures. Public deductions may exclude
+    // cards, but unknown holdings must never be treated as a complete hand.
+    const description = R.describe(lead, trump);
+    let cards = followHand || unseen;
     if (!cards) return 120;
-    const same = followHand?.filter(id => R.group(id, trump) === description.group);
-    if (same?.length && same.length < description.n) return -1;
+    let required = [], slots = Infinity, noPairs = [];
+    if (view && !followHand) {
+      const shown = view.shown || [];
+      slots = view.counts?.[player] ?? Infinity;
+      noPairs = view.noPairs?.[player] || [];
+      required = [...new Set(shown.filter(entry => entry.player === player && (player !== view.dealer || view.bottom))
+        .flatMap(entry => entry.cards).filter(id => cards.includes(id)))];
+      cards = cards.filter(id => mayHold(view, player, id, trump));
+    }
+    const same = cards.filter(id => R.group(id, trump) === description.group);
+    // Known cards and remaining capacity can prove that a suit must be followed.
+    // A dealer's declared card may have been buried, so it is not required above.
+    const mustFollow = followHand ? same.length > 0 : Boolean(view) && (required.some(id => R.group(id, trump) === description.group)
+      || Number.isFinite(slots) && cards.length - same.length < slots);
+    if (mustFollow && same.length < description.n) return -1;
+    const fits = move => new Set([...required, ...move]).size <= slots;
     let ceiling = -1;
-    for (const group of new Set(same?.length ? [description.group] : [description.group, 4])) {
+    for (const group of new Set(mustFollow ? [description.group] : [description.group, 4])) {
       const pool = cards.filter(id => R.group(id, trump) === group);
-      if (pool.length < description.n) continue;
-      if (description.type === 'single' || description.type === 'throw') ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...pool.map(id => R.level(id, trump))));
-      else {
+      if (pool.length < description.n || description.n + required.filter(id => R.group(id, trump) !== group).length > slots) continue;
+      if (description.type === 'single' || description.type === 'throw') {
+        const possible = pool.filter(id => fits([id]));
+        if (possible.length) ceiling = Math.max(ceiling, (group === 4 ? 100 : 0) + Math.max(...possible.map(id => R.level(id, trump))));
+      } else if (!noPairs.includes(group)) {
         const replies = description.type === 'pair' ? R.pairs(pool) : R.leadMoves(pool, trump, [], false).filter(cards => cards.length === description.n);
-        ceiling = Math.max(ceiling, ...replies.filter(move => !followHand || !R.validate(followHand, move, lead, trump)).map(move => R.strength(move, lead, trump)));
+        ceiling = Math.max(ceiling, ...replies.filter(move => fits(move) && (!followHand || !R.validate(followHand, move, lead, trump)))
+          .map(move => R.strength(move, lead, trump)));
       }
     }
     return ceiling;
   }
-  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null) {
+  function singleFollowCeiling(trick, player, dealer, trump, unseen, followHand = null, view = null) {
     if (!trick.length) return null;
     if (trick.length === 2 || sameTeam(player, (player + 1) % 3, dealer)) return -1;
-    return replyCeiling(trick[0], trump, unseen, followHand);
+    return replyCeiling(trick[0], trump, unseen, followHand, view, (player + 1) % 3);
   }
   function sideEntryLoss(hand, cards, trump, unseen) {
     if (!unseen) return 0;
@@ -2501,7 +2554,12 @@ const Bot = (() => {
     // set so this does not multiply the cost of every future simulated turn.
     // Enumerate manageable late follows instead of randomly omitting a whole
     // suit-retention plan. For example, C(11,4)=330 exceeds the old 256 cap.
-    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, unseen) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen, partialThrows: true });
+    // A buried card cannot fail a throw. Exclude it only when neither other
+    // seat can hold it. Actual trump responses are evaluated in the search.
+    const otherSeats = [0, 1, 2].filter(player => player !== view.player);
+    const throwBlockers = !lead && !view.bottom
+      ? unseen.filter(id => otherSeats.some(player => mayHold(view, player, id, view.trump))) : unseen;
+    const available = view.hand.length <= 7 ? smallMoves(view.hand, lead, view.trump, throwBlockers) : R.legalMoves(view.hand, lead, view.trump, { random, samples: 96, enumerate: view.hand.length <= 12 ? 1024 : 256, unseen: throwBlockers, partialThrows: true });
     const candidates = [...new Map(available.map(cards => [cards.map(R.face).sort((a, b) => a - b).join(','), cards])).values()];
     const controlPlans = [];
     if (!lead && view.player === view.dealer && !openingPlans.length && view.hand.length > 12
@@ -2526,8 +2584,8 @@ const Bot = (() => {
         for (const first of mains) controlPlans.push({ first, second: sides[0] });
       }
     }
-    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen);
-    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen);
+    const support = farmerSupport(view.trick, view.player, view.dealer, view.trump, unseen, null, view);
+    const followCeiling = singleFollowCeiling(view.trick, view.player, view.dealer, view.trump, unseen, null, view);
     const current = lead && view.trick[R.winningIndex(view.trick, view.trump)];
     const quietCut = view.trick.length === 1 && R.describe(lead, view.trump).type === 'single'
       && R.group(lead.cards[0], view.trump) !== 4 && !sameTeam(view.player, current.player, view.dealer)

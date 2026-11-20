@@ -462,7 +462,12 @@ const Bot = (() => {
     const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
     if (!view.bottom) targets.push({ p: 3, count: 9 });
     if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
+    // A throw still on the table has already passed the failure check. Neither
+    // follower can have a higher card in its group, including the last seat.
+    const tableLead = view.trick?.[0], thrown = tableLead && R.describe(tableLead, view.trump);
+    const throwMin = thrown?.type === 'throw' ? Math.min(...tableLead.cards.map(id => R.level(id, view.trump))) : null;
     const allowed = (id, p, assigned = []) => (!dealerShown.has(id) || p === view.dealer || p === 3)
+      && (throwMin === null || p === 3 || p === tableLead.player || R.group(id, view.trump) !== thrown.group || R.level(id, view.trump) <= throwMin)
       && (p === 3 || (!view.voids[p].includes(R.group(id, view.trump))
         && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[p] ?? 20))
         && !(view.forbiddenFaces?.[p] || []).includes(R.face(id))
@@ -569,6 +574,9 @@ const Bot = (() => {
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     if (winner.player === dealer) return null;
     const power = R.strength(winner.cards, lead, trump);
+    const shape = R.describe(lead, trump);
+    if (shape.type === 'throw' && shape.group === 4 && winner.player === lead.player)
+      return { winner: winner.player, power, ceiling: power, safe: true };
     let ceiling = -1;
     if (!trick.some(entry => entry.player === dealer)) {
       // Only a hypothetical sampled hand is supplied here, never the live deal.
@@ -878,7 +886,30 @@ const Bot = (() => {
       return ranked.filter(move => move.score === best).map(move => move.cards);
     }
     const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
-    const economical = losing.filter(cards => R.points(cards) === pointLimit);
+    let economical = losing.filter(cards => R.points(cards) === pointLimit);
+    const view = context.view;
+    if (safePartner && view && !hand.some(id => R.group(id, trump) === 4)
+      && view.counts[winner.player] >= 2 && !view.voids[dealer].includes(4)) {
+      // Compare intact feeds of the same value. In a suit the dealer lacks,
+      // our highest card can be the only obstacle to a later partner throw.
+      const intactFeeds = economical.filter(intact);
+      let bestUnlock = 0, bestFeeds = [];
+      for (const cards of intactFeeds) {
+        const rest = R.remove(hand, cards);
+        let unlock = 0;
+        for (const group of view.voids[dealer].filter(g => g !== 4)) {
+          const oldHigh = Math.max(0, ...hand.filter(id => R.group(id, trump) === group).map(id => R.level(id, trump)));
+          const newHigh = Math.max(0, ...rest.filter(id => R.group(id, trump) === group).map(id => R.level(id, trump)));
+          if (oldHigh === newHigh) continue;
+          const possible = unseen.filter(id => R.group(id, trump) === group && mayHold(view, winner.player, id, trump));
+          const ranks = new Set(possible.filter(id => R.level(id, trump) >= newHigh).map(id => R.level(id, trump)));
+          if (ranks.size >= 2) unlock += [...ranks].filter(level => level < oldHigh).length;
+        }
+        if (unlock > bestUnlock) { bestUnlock = unlock; bestFeeds = []; }
+        if (unlock && unlock === bestUnlock) bestFeeds.push(cards);
+      }
+      if (bestUnlock) economical = bestFeeds;
+    }
     // When we can contest the trick, compare every minimum-point concession with
     // every winning move. A slightly larger loser may preserve a valuable tractor.
     if (!safePartner && winning.length) return [...winning, ...economical];
@@ -1163,8 +1194,37 @@ const Bot = (() => {
       && !view.hand.some(id => R.group(id, view.trump) === R.group(lead.cards[0], view.trump))
       && !R.points(lead.cards) && view.hand.length > 6;
     const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen,
-      { followCeiling, farmerScore: view.farmerScore, bid: view.bid });
+      { view, followCeiling, farmerScore: view.farmerScore, bid: view.bid });
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
+    // Last three cards: a teammate may have discarded the only face blocking
+    // a side throw. Its other copy could be buried or still in their hand.
+    // Keep this separate from proven throws; every failed attempt is a loss.
+    let bottomAttempt = null;
+    if (!lead && !view.bottom && view.player !== view.dealer && view.hand.length === 3 && !view.failed?.some(Boolean)
+      && view.farmerScore < R.farmerTarget(view.bid)) {
+      const partner = [0, 1, 2].find(p => p !== view.player && p !== view.dealer);
+      const side = view.hand.filter(id => R.group(id, view.trump) !== 4);
+      const shape = R.describe(side, view.trump);
+      const master = view.hand.find(id => R.group(id, view.trump) === 4);
+      if (side.length === 2 && shape?.type === 'throw' && master !== undefined
+        && view.voids[partner].includes(4) && view.voids[view.dealer].includes(shape.group)
+        && unseen.every(id => R.group(id, view.trump) !== 4 || R.level(id, view.trump) < R.level(master, view.trump))) {
+        const minimum = Math.min(...side.map(id => R.level(id, view.trump)));
+        const blockers = throwBlockers.filter(id => R.group(id, view.trump) === shape.group && R.level(id, view.trump) > minimum);
+        if (blockers.length === 1 && !view.shown.some(entry => entry.player === partner && entry.cards.includes(blockers[0]))) {
+          for (let i = (view.history?.length || 0) - 1; i >= 0; i--) {
+            const table = view.history[i].plays;
+            if (table.length !== 3 || table[R.winningIndex(table, view.trump)].player !== view.player) break;
+            if (R.describe(table[0], view.trump).group === 4
+              && table.find(play => play.player === partner).cards.some(id => R.face(id) === R.face(blockers[0]))) {
+              bottomAttempt = side;
+              candidates.push(side);
+              break;
+            }
+          }
+        }
+      }
+    }
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
     // Every option is simulated. Lead and follow priors provide a conservative
@@ -1235,7 +1295,10 @@ const Bot = (() => {
         const exactBudget = sample.hands.every(hand => hand.length <= 3) ? limit : Math.min(1500, limit * .25);
         const search = { deadline: Math.min(deadline, performance.now() + exactBudget), nodes: 0, cache: new Map() };
         try {
-          for (const candidate of active) values.push(endgame(position(candidate), view, search));
+          for (const candidate of active) {
+            const fails = candidate.cards === bottomAttempt && R.throwFailure(bottomAttempt, sample.hands, view.player, view.trump);
+            values.push(fails ? -850 + view.farmerScore : endgame(position(candidate), view, search));
+          }
         } catch (error) {
           if (error !== searchExpired) throw error;
           exact = false; values = [];
@@ -1244,6 +1307,9 @@ const Bot = (() => {
       }
       if (!exact) for (const candidate of active) {
         if (samples && performance.now() >= deadline) break;
+        if (candidate.cards === bottomAttempt && R.throwFailure(bottomAttempt, sample.hands, view.player, view.trump)) {
+          values.push(-850 + view.farmerScore); followUps.push(false); continue;
+        }
         const sim = position(candidate), rolloutRandom = R.seeded(sampleSeed);
         let guard = 0, pending = candidate.nextLead, followed = false;
         while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
@@ -1311,6 +1377,28 @@ const Bot = (() => {
     // feeding or a cheap relay; retain the public-safe default for tiny samples.
     if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     let economicalReason = null;
+    // With a trumpless partner and several master trumps, cashing the trumps
+    // together may leave no way back in. Try conceding the cheapest single
+    // in the dealer's void suit before drawing trumps. Check the same deals.
+    if (!lead && view.player !== view.dealer && view.hand.length <= 7 && samples >= 2
+      && baseline?.cards.length > 1 && R.group(baseline.cards[0], view.trump) === 4
+      && view.voids[partner].includes(4) && !view.voids[view.dealer].includes(4)) {
+      const mains = view.hand.filter(id => R.group(id, view.trump) === 4);
+      const outsideHigh = Math.max(0, ...unseen.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)));
+      const sides = view.hand.filter(id => R.group(id, view.trump) !== 4);
+      const suit = sides.length ? R.group(sides[0], view.trump) : -1;
+      if (mains.length >= 2 && mains.every(id => R.level(id, view.trump) >= outsideHigh)
+        && sides.length >= 3 && sides.every(id => R.group(id, view.trump) === suit)
+        && view.voids[view.dealer].includes(suit) && !R.pairs(sides).length) {
+        const cheap = sides.slice().sort((a, b) => R.value(a) - R.value(b) || R.level(a, view.trump) - R.level(b, view.trump))[0];
+        const probe = ranked.find(c => c.cards.length === 1 && c.cards[0] === cheap);
+        if (probe?.visits === samples && baseline.visits === samples
+          && probe.outcomes.every((value, i) => value > 0 || baseline.outcomes[i] < 0)
+          && probe.wins > baseline.wins && probe.points >= baseline.points) {
+          baseline = probe; economicalReason = 'retain-trumps-for-bottom';
+        }
+      }
+    }
     const partnerCoverage = cooperate && samples >= 24 ? coverageTotals.map(total => total / samples) : null;
     if (partnerCoverage) {
       const cover = cooperativeDiscard(view.hand, ranked.filter(candidate => candidate.visits === samples), baseline, view.trump, unseen, partnerCoverage);
@@ -1353,6 +1441,7 @@ const Bot = (() => {
       // Keep all legal options, including structural sacrifices and team relays.
       for (const candidate of active) {
         if (candidate === baseline) break;
+        if (candidate.cards === bottomAttempt) continue;
         let gains = 0, losses = 0, points = 0, squares = 0;
         const halfWins = [0, 0], halfPoints = [0, 0], count = candidate.outcomes.length;
         for (let i = 0; i < count; i++) {
@@ -1447,6 +1536,20 @@ const Bot = (() => {
         candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, mainEntryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
+    }
+    if (bottomAttempt && samples >= 32 && exactSamples === samples) {
+      const attempt = ranked.find(candidate => candidate.cards === bottomAttempt);
+      const betterThanSingles = ranked.filter(candidate => candidate !== attempt).every(single => {
+        let gains = 0, losses = 0;
+        const halves = [0, 0];
+        attempt.outcomes.forEach((value, i) => {
+          const change = Number(value > 0) - Number(single.outcomes[i] > 0);
+          gains += Number(change > 0); losses += Number(change < 0);
+          halves[Number(i >= samples / 2)] += change;
+        });
+        return gains + losses >= 6 && halves.every(net => net > 0) && winBounds(gains, gains + losses).lower > 0.5;
+      });
+      if (betterThanSingles) { best = attempt; selectionReason = 'endgame-bottom-throw'; }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
       selectionReason, baselineCards: baseline?.cards,
@@ -1891,7 +1994,12 @@ const Bot = (() => {
     const targets = [0, 1, 2].filter(p => p !== view.player).map(p => ({ p, count: view.counts[p] - hands[p].length }));
     if (!view.bottom) targets.push({ p: 3, count: 9 });
     if (targets.some(t => t.count < 0) || targets.reduce((s, t) => s + t.count, 0) !== unknown.length) return null;
+    // A throw still on the table has already passed the failure check. Neither
+    // follower can have a higher card in its group, including the last seat.
+    const tableLead = view.trick?.[0], thrown = tableLead && R.describe(tableLead, view.trump);
+    const throwMin = thrown?.type === 'throw' ? Math.min(...tableLead.cards.map(id => R.level(id, view.trump))) : null;
     const allowed = (id, p, assigned = []) => (!dealerShown.has(id) || p === view.dealer || p === 3)
+      && (throwMin === null || p === 3 || p === tableLead.player || R.group(id, view.trump) !== thrown.group || R.level(id, view.trump) <= throwMin)
       && (p === 3 || (!view.voids[p].includes(R.group(id, view.trump))
         && (!R.hard(id) || R.level(id, view.trump) <= (view.hardCeilings?.[p] ?? 20))
         && !(view.forbiddenFaces?.[p] || []).includes(R.face(id))
@@ -1998,6 +2106,9 @@ const Bot = (() => {
     const lead = trick[0], winner = trick[R.winningIndex(trick, trump)];
     if (winner.player === dealer) return null;
     const power = R.strength(winner.cards, lead, trump);
+    const shape = R.describe(lead, trump);
+    if (shape.type === 'throw' && shape.group === 4 && winner.player === lead.player)
+      return { winner: winner.player, power, ceiling: power, safe: true };
     let ceiling = -1;
     if (!trick.some(entry => entry.player === dealer)) {
       // Only a hypothetical sampled hand is supplied here, never the live deal.
@@ -2307,7 +2418,30 @@ const Bot = (() => {
       return ranked.filter(move => move.score === best).map(move => move.cards);
     }
     const pointLimit = safePartner ? Math.max(...losing.map(R.points)) : Math.min(...losing.map(R.points));
-    const economical = losing.filter(cards => R.points(cards) === pointLimit);
+    let economical = losing.filter(cards => R.points(cards) === pointLimit);
+    const view = context.view;
+    if (safePartner && view && !hand.some(id => R.group(id, trump) === 4)
+      && view.counts[winner.player] >= 2 && !view.voids[dealer].includes(4)) {
+      // Compare intact feeds of the same value. In a suit the dealer lacks,
+      // our highest card can be the only obstacle to a later partner throw.
+      const intactFeeds = economical.filter(intact);
+      let bestUnlock = 0, bestFeeds = [];
+      for (const cards of intactFeeds) {
+        const rest = R.remove(hand, cards);
+        let unlock = 0;
+        for (const group of view.voids[dealer].filter(g => g !== 4)) {
+          const oldHigh = Math.max(0, ...hand.filter(id => R.group(id, trump) === group).map(id => R.level(id, trump)));
+          const newHigh = Math.max(0, ...rest.filter(id => R.group(id, trump) === group).map(id => R.level(id, trump)));
+          if (oldHigh === newHigh) continue;
+          const possible = unseen.filter(id => R.group(id, trump) === group && mayHold(view, winner.player, id, trump));
+          const ranks = new Set(possible.filter(id => R.level(id, trump) >= newHigh).map(id => R.level(id, trump)));
+          if (ranks.size >= 2) unlock += [...ranks].filter(level => level < oldHigh).length;
+        }
+        if (unlock > bestUnlock) { bestUnlock = unlock; bestFeeds = []; }
+        if (unlock && unlock === bestUnlock) bestFeeds.push(cards);
+      }
+      if (bestUnlock) economical = bestFeeds;
+    }
     // When we can contest the trick, compare every minimum-point concession with
     // every winning move. A slightly larger loser may preserve a valuable tractor.
     if (!safePartner && winning.length) return [...winning, ...economical];
@@ -2592,8 +2726,37 @@ const Bot = (() => {
       && !view.hand.some(id => R.group(id, view.trump) === R.group(lead.cards[0], view.trump))
       && !R.points(lead.cards) && view.hand.length > 6;
     const defaults = tacticalMoves(view.hand, candidates, view.trick, view.player, view.dealer, view.trump, support, unseen,
-      { followCeiling, farmerScore: view.farmerScore, bid: view.bid });
+      { view, followCeiling, farmerScore: view.farmerScore, bid: view.bid });
     const defaultKeys = new Set(defaults.map(cards => cards.map(R.face).sort((a, b) => a - b).join(',')));
+    // Last three cards: a teammate may have discarded the only face blocking
+    // a side throw. Its other copy could be buried or still in their hand.
+    // Keep this separate from proven throws; every failed attempt is a loss.
+    let bottomAttempt = null;
+    if (!lead && !view.bottom && view.player !== view.dealer && view.hand.length === 3 && !view.failed?.some(Boolean)
+      && view.farmerScore < R.farmerTarget(view.bid)) {
+      const partner = [0, 1, 2].find(p => p !== view.player && p !== view.dealer);
+      const side = view.hand.filter(id => R.group(id, view.trump) !== 4);
+      const shape = R.describe(side, view.trump);
+      const master = view.hand.find(id => R.group(id, view.trump) === 4);
+      if (side.length === 2 && shape?.type === 'throw' && master !== undefined
+        && view.voids[partner].includes(4) && view.voids[view.dealer].includes(shape.group)
+        && unseen.every(id => R.group(id, view.trump) !== 4 || R.level(id, view.trump) < R.level(master, view.trump))) {
+        const minimum = Math.min(...side.map(id => R.level(id, view.trump)));
+        const blockers = throwBlockers.filter(id => R.group(id, view.trump) === shape.group && R.level(id, view.trump) > minimum);
+        if (blockers.length === 1 && !view.shown.some(entry => entry.player === partner && entry.cards.includes(blockers[0]))) {
+          for (let i = (view.history?.length || 0) - 1; i >= 0; i--) {
+            const table = view.history[i].plays;
+            if (table.length !== 3 || table[R.winningIndex(table, view.trump)].player !== view.player) break;
+            if (R.describe(table[0], view.trump).group === 4
+              && table.find(play => play.player === partner).cards.some(id => R.face(id) === R.face(blockers[0]))) {
+              bottomAttempt = side;
+              candidates.push(side);
+              break;
+            }
+          }
+        }
+      }
+    }
     if (!candidates.length) throw new Error('没有合法候选牌');
     const limit = view.thinkMs || 6000, deadline = started + limit;
     // Every option is simulated. Lead and follow priors provide a conservative
@@ -2664,7 +2827,10 @@ const Bot = (() => {
         const exactBudget = sample.hands.every(hand => hand.length <= 3) ? limit : Math.min(1500, limit * .25);
         const search = { deadline: Math.min(deadline, performance.now() + exactBudget), nodes: 0, cache: new Map() };
         try {
-          for (const candidate of active) values.push(endgame(position(candidate), view, search));
+          for (const candidate of active) {
+            const fails = candidate.cards === bottomAttempt && R.throwFailure(bottomAttempt, sample.hands, view.player, view.trump);
+            values.push(fails ? -850 + view.farmerScore : endgame(position(candidate), view, search));
+          }
         } catch (error) {
           if (error !== searchExpired) throw error;
           exact = false; values = [];
@@ -2673,6 +2839,9 @@ const Bot = (() => {
       }
       if (!exact) for (const candidate of active) {
         if (samples && performance.now() >= deadline) break;
+        if (candidate.cards === bottomAttempt && R.throwFailure(bottomAttempt, sample.hands, view.player, view.trump)) {
+          values.push(-850 + view.farmerScore); followUps.push(false); continue;
+        }
         const sim = position(candidate), rolloutRandom = R.seeded(sampleSeed);
         let guard = 0, pending = candidate.nextLead, followed = false;
         while (!sim.hands.every(hand => !hand.length) && guard++ < 110 && (!samples || performance.now() < deadline)) {
@@ -2740,6 +2909,28 @@ const Bot = (() => {
     // feeding or a cheap relay; retain the public-safe default for tiny samples.
     if (support && !support.safe && samples >= 6) baseline = ranked.slice().sort((a, b) => b.sampledPrior / b.visits - a.sampledPrior / a.visits || b.prior - a.prior)[0];
     let economicalReason = null;
+    // With a trumpless partner and several master trumps, cashing the trumps
+    // together may leave no way back in. Try conceding the cheapest single
+    // in the dealer's void suit before drawing trumps. Check the same deals.
+    if (!lead && view.player !== view.dealer && view.hand.length <= 7 && samples >= 2
+      && baseline?.cards.length > 1 && R.group(baseline.cards[0], view.trump) === 4
+      && view.voids[partner].includes(4) && !view.voids[view.dealer].includes(4)) {
+      const mains = view.hand.filter(id => R.group(id, view.trump) === 4);
+      const outsideHigh = Math.max(0, ...unseen.filter(id => R.group(id, view.trump) === 4).map(id => R.level(id, view.trump)));
+      const sides = view.hand.filter(id => R.group(id, view.trump) !== 4);
+      const suit = sides.length ? R.group(sides[0], view.trump) : -1;
+      if (mains.length >= 2 && mains.every(id => R.level(id, view.trump) >= outsideHigh)
+        && sides.length >= 3 && sides.every(id => R.group(id, view.trump) === suit)
+        && view.voids[view.dealer].includes(suit) && !R.pairs(sides).length) {
+        const cheap = sides.slice().sort((a, b) => R.value(a) - R.value(b) || R.level(a, view.trump) - R.level(b, view.trump))[0];
+        const probe = ranked.find(c => c.cards.length === 1 && c.cards[0] === cheap);
+        if (probe?.visits === samples && baseline.visits === samples
+          && probe.outcomes.every((value, i) => value > 0 || baseline.outcomes[i] < 0)
+          && probe.wins > baseline.wins && probe.points >= baseline.points) {
+          baseline = probe; economicalReason = 'retain-trumps-for-bottom';
+        }
+      }
+    }
     const partnerCoverage = cooperate && samples >= 24 ? coverageTotals.map(total => total / samples) : null;
     if (partnerCoverage) {
       const cover = cooperativeDiscard(view.hand, ranked.filter(candidate => candidate.visits === samples), baseline, view.trump, unseen, partnerCoverage);
@@ -2782,6 +2973,7 @@ const Bot = (() => {
       // Keep all legal options, including structural sacrifices and team relays.
       for (const candidate of active) {
         if (candidate === baseline) break;
+        if (candidate.cards === bottomAttempt) continue;
         let gains = 0, losses = 0, points = 0, squares = 0;
         const halfWins = [0, 0], halfPoints = [0, 0], count = candidate.outcomes.length;
         for (let i = 0; i < count; i++) {
@@ -2876,6 +3068,20 @@ const Bot = (() => {
         candidate.evidence = { pairedSamples: count, gains, losses, meanPointGain: mean, pairedWinEvidence, winEvidence, pointEvidence, feedingWinGuard, entryWinGuard, mainEntryWinGuard, leadValueEvidence: Boolean(leadValueEvidence && pointEvidence), structuralGuard: Boolean(lead && extraDamage && !structuralProof), trumpShieldGuard: Boolean(lostTrumpShield && !structuralProof), feedingGuard: Boolean(missedFeed && !structuralProof), captureGuard: Boolean(missedCapture && !structuralProof), entryGuard: Boolean(lostEntry && !structuralProof), captureEconomyGuard: Boolean(captureEconomyGuard && !structuralProof), coverageGuard: Boolean(coverageGuard && !structuralProof) };
         if (winEvidence || pointEvidence) { best = candidate; selectionReason = winEvidence ? 'paired-win-advantage' : leadValueEvidence ? 'paired-lead-value' : 'paired-point-advantage'; break; }
       }
+    }
+    if (bottomAttempt && samples >= 32 && exactSamples === samples) {
+      const attempt = ranked.find(candidate => candidate.cards === bottomAttempt);
+      const betterThanSingles = ranked.filter(candidate => candidate !== attempt).every(single => {
+        let gains = 0, losses = 0;
+        const halves = [0, 0];
+        attempt.outcomes.forEach((value, i) => {
+          const change = Number(value > 0) - Number(single.outcomes[i] > 0);
+          gains += Number(change > 0); losses += Number(change < 0);
+          halves[Number(i >= samples / 2)] += change;
+        });
+        return gains + losses >= 6 && halves.every(net => net > 0) && winBounds(gains, gains + losses).lower > 0.5;
+      });
+      if (betterThanSingles) { best = attempt; selectionReason = 'endgame-bottom-throw'; }
     }
     return { cards: best.cards, samples, exactSamples, nodes, candidates: candidates.length, winRate: best.wins / best.visits, expectedPoints: best.points / best.visits, winRateBounds: winBounds(best.wins, best.visits), verifiedException: !best.preferred && best.exactVisits === best.visits && best.worstAdvantage > 0, elapsed: performance.now() - started,
       selectionReason, baselineCards: baseline?.cards,
